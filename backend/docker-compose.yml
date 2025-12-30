@@ -1,0 +1,75 @@
+version: "3.9"
+
+services:
+  api-gateway:
+    build: ./api-gateway
+    ports:
+      - "3000:3000"
+    environment:
+      - SERVICE_NAME=api-gateway
+      - PORT=3000
+    depends_on:
+      - auth-service
+      - trace-ingestion-service
+    restart: unless-stopped
+
+  auth-service:
+    build: ./auth-service
+    environment:
+      - SERVICE_NAME=auth-service
+      - PORT=3001
+    restart: unless-stopped
+
+  trace-ingestion-service:
+    build: ./trace-ingestion-service
+    environment:
+      - SERVICE_NAME=trace-ingestion-service
+      - PORT=3002
+    restart: unless-stopped
+
+  trace-engine-service:
+    build: ./trace-engine-service
+    environment:
+      - SERVICE_NAME=trace-engine-service
+      - PORT=3003
+    restart: unless-stopped
+
+  analysis-service:
+    build: ./analysis-service
+    environment:
+      - SERVICE_NAME=analysis-service
+      - PORT=3004
+    restart: unless-stopped
+
+  replay-service:
+    build: ./replay-service
+    environment:
+      - SERVICE_NAME=replay-service
+      - PORT=3005
+    restart: unless-stopped
+
+  storage-service:
+    build: ./storage-service
+    environment:
+      - SERVICE_NAME=storage-service
+      - PORT=3006
+    restart: unless-stopped
+
+  mongo:
+    image: mongo:7
+    volumes:
+      - mongo_data:/data/db
+    restart: unless-stopped
+  
+  postgres:
+    image: postgres:15-alpine
+    ports: ["5432:5432"]
+    environment:
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: traceweave
+    volumes: [pg_data:/var/lib/postgresql/data]
+
+volumes:
+  mongo_data:
+  pg_data:

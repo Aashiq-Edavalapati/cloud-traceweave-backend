@@ -1,0 +1,146 @@
+version: "3.9"
+
+services:
+  proxy-service:
+    build: ./proxy-service
+    ports:
+      - "9000:9000"  # Proxy Port
+      - "9001:9001"  # MITM Web Interface
+    environment:
+      - SERVICE_NAME=proxy-service
+      - PORT=9000
+    volumes:
+      - ./proxy-service:/app
+    command: ["mitmdump", "-p", "9000", "-s", "main.py"]
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:15-alpine
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: traceweave
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  mongo:
+    image: mongo:7
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    restart: unless-stopped
+
+  # --- NODE.JS SERVICES ---
+
+  api-gateway:
+    build: ./api-gateway
+    ports:
+      - "3000:3000"
+    environment:
+      - SERVICE_NAME=api-gateway
+      - PORT=3000
+      - AUTH_SERVICE_URL=http://auth-service:3001
+      - TRACE_INGESTION_URL=http://trace-ingestion-service:3002
+    depends_on:
+      - auth-service
+      - trace-ingestion-service
+    volumes:
+      - ./api-gateway:/app
+      - /app/node_modules
+    command: npm run dev
+    restart: unless-stopped
+
+  auth-service:
+    build: ./auth-service
+    ports:
+      - "3001:3001"
+    environment:
+      - SERVICE_NAME=auth-service
+      - PORT=3001
+      - DB_HOST=postgres
+    depends_on:
+      - postgres
+    volumes:
+      - ./auth-service:/app
+      - /app/node_modules
+    command: npm run dev
+    restart: unless-stopped
+
+  trace-engine-service:
+    build: ./trace-engine-service
+    ports:
+      - "3003:3003"
+    environment:
+      - SERVICE_NAME=trace-engine-service
+      - PORT=3003
+      - DB_HOST=postgres
+    depends_on:
+      - postgres
+    volumes:
+      - ./trace-engine-service:/app
+      - /app/node_modules
+    command: npm run dev
+    restart: unless-stopped
+
+  storage-service:
+    build: ./storage-service
+    ports:
+      - "3006:3006"
+    environment:
+      - SERVICE_NAME=storage-service
+      - PORT=3006
+    volumes:
+      - ./storage-service:/app
+      - /app/node_modules
+    command: npm run dev
+    restart: unless-stopped
+
+  # --- PYTHON SERVICES (Fixed) ---
+
+  trace-ingestion-service:
+    build: ./trace-ingestion-service
+    ports:
+      - "3002:3002"
+    environment:
+      - SERVICE_NAME=trace-ingestion-service
+      - PORT=3002
+      - MONGO_URL=mongodb://mongo:27017
+    depends_on:
+      - mongo
+    volumes:
+      - ./trace-ingestion-service:/app
+    # Using uvicorn with reload for dev
+    command: uvicorn main:app --host 0.0.0.0 --port 3002 --reload
+    restart: unless-stopped
+
+  analysis-service:
+    build: ./analysis-service
+    ports:
+      - "3004:3004"
+    environment:
+      - SERVICE_NAME=analysis-service
+      - PORT=3004
+    volumes:
+      - ./analysis-service:/app
+    command: uvicorn main:app --host 0.0.0.0 --port 3004 --reload
+    restart: unless-stopped
+
+  replay-service:
+    build: ./replay-service
+    ports:
+      - "3005:3005"
+    environment:
+      - SERVICE_NAME=replay-service
+      - PORT=3005
+    volumes:
+      - ./replay-service:/app
+    command: uvicorn main:app --host 0.0.0.0 --port 3005 --reload
+    restart: unless-stopped
+
+volumes:
+  mongo_data:
+  pg_data:
