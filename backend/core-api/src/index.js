@@ -8,6 +8,7 @@ import { errorConverter, errorHandler } from './middlewares/error.js';
 import ApiError from './utils/ApiError.js';
 import sequelize from './config/database.js';
 import dotenv from 'dotenv';
+import routes from './routes/index.js';
 
 dotenv.config();
 
@@ -34,6 +35,8 @@ app.get('/test-error', (req, res, next) => {
 app.use((req, res, next) => {
   next(new ApiError(httpStatus.NOT_FOUND, 'Not found'));
 });
+
+app.use('/v1', routes);
 
 // Global Error Processing
 app.use(errorConverter); // Convert non-ApiErrors to ApiErrors
