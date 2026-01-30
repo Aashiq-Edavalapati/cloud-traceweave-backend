@@ -1,27 +1,88 @@
 import express from 'express';
+import helmet from 'helmet';
 import cors from 'cors';
+import morgan from 'morgan';
+import httpStatus from 'http-status';
+import config from './config/config.js';
+import { errorConverter, errorHandler } from './middlewares/error.js';
+import ApiError from './utils/ApiError.js';
+import sequelize from './config/database.js';
 import dotenv from 'dotenv';
+import routes from './routes/index.js';
 
-dotenv.config();
+if (!process.env.DB_HOST) {
+  dotenv.config({ path: ".env.local" });
+}
+
 const app = express();
-const PORT = process.env.PORT || 4000;
 
-// Middleware
-app.use(cors());
-app.use(express.json());
+// Global Middlewares
+app.use(helmet()); // Security headers
+app.use(cors()); // Enable CORS
+app.use(express.json()); // Parse JSON bodies
+app.use(morgan('dev')); // Logger
 
-// Basic Route
-const apiRouter = express.Router();
-
-// Define routes on the Router, not 'app'
-apiRouter.get('/', (req, res) => {
-  res.send('Core API is Alive!');
+// Routes (Placeholder)
+app.get('/health', (req, res) => {
+  res.status(200).send({ status: 'OK', service: 'Core API' });
 });
 
-// Mount the Router at '/api'
-app.use('/api', apiRouter);
+app.use('/v1', routes);
 
-// Start Server
-app.listen(PORT, () => {
-  console.log(`Core API running on port ${PORT}`);
+// Test the error handler
+app.get('/test-error', (req, res, next) => {
+  // Simulate a 400 Bad Request
+  next(new ApiError(httpStatus.BAD_REQUEST, 'This is a test error for OP-B01'));
+});
+
+
+// 404 Handler (for unknown routes)
+app.use((req, res, next) => {
+  next(new ApiError(httpStatus.NOT_FOUND, 'Not found'));
+});
+
+
+// Global Error Processing
+app.use(errorConverter); // Convert non-ApiErrors to ApiErrors
+app.use(errorHandler);   // Handle the response
+
+// Server Start
+let server;
+
+const startServer = async () => {
+  try {
+    await sequelize.authenticate();
+    console.log('PostgreSQL Connection has been established successfully.');
+
+    server = app.listen(config.port, () => {
+      console.log(`Core API running on port ${config.port} in ${config.env} mode`);
+    });
+  } catch (error) {
+    console.error('Unable to connect to the database:', error);
+    process.exit(1);
+ }
+};
+
+startServer();
+
+// Handle unexpected crashes
+const exitHandler = () => {
+  if (server) {
+    server.close(() => {
+      console.log('Server closed');
+      process.exit(1);
+    });
+  } else {
+    process.exit(1);
+  }
+};
+
+process.on('uncaughtException', (err) => {
+  console.error('Uncaught Exception:', err);
+  exitHandler();
+});
+
+process.on('unhandledRejection', (err) => {
+  console.error('Unhandled Rejection:', err);
+  exitHandler();
 });
