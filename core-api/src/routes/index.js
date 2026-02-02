@@ -1,6 +1,6 @@
 import express from 'express';
 import authRoute from './auth.route.js';
-
+import collectionRoute from './collection.route.js';
 const router = express.Router();
 
 const defaultRoutes = [
