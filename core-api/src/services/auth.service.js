@@ -4,7 +4,7 @@ import prisma from '../config/prisma.js';
 import ApiError from '../utils/ApiError.js';
 import { sendEmail } from './email.service.js';
 
-const createUser = async (userBody) => {
+export const createUser = async (userBody) => {
   if (await prisma.user.findUnique({ where: { email: userBody.email } })) {
     throw new ApiError(httpStatus.BAD_REQUEST, 'Email already taken');
   }
@@ -44,7 +44,7 @@ const createUser = async (userBody) => {
   return user;
 };
 
-const loginUserWithEmailAndPassword = async (email, password) => {
+export const loginUserWithEmailAndPassword = async (email, password) => {
   const user = await prisma.user.findUnique({ 
     where: { email },
     include: { identities: true }
@@ -60,11 +60,6 @@ const loginUserWithEmailAndPassword = async (email, password) => {
   }
 
   return user;
-};
-
-export default {
-  createUser,
-  loginUserWithEmailAndPassword,
 };
 
 /**
@@ -127,3 +122,9 @@ export const findOrCreateUser = async (email, provider, providerId, profileData)
 
   return user;
 };
+
+export const getUserById = async (userId) => {
+  return prisma.user.findUnique({
+    where: { id: userId },
+  });
+}

@@ -1,14 +1,15 @@
 import express from 'express';
 import validate from '../middlewares/validate.js';
 import authValidation from '../validations/auth.validation.js';
-import authController from '../controllers/auth.controller.js';
+import { register, login, getMe } from '../controllers/auth.controller.js';
+import authMiddleware from '../middlewares/authMiddleware.js';
 import passport from 'passport';
 import jwt from 'jsonwebtoken';
 
 const router = express.Router();
 
-router.post('/register', validate(authValidation.register), authController.register);
-router.post('/login', validate(authValidation.login), authController.login);
+router.post('/register', validate(authValidation.register), register);
+router.post('/login', validate(authValidation.login), login);
 
 // Helper to generate Token and Redirect
 const handleAuthCallback = (req, res) => {
@@ -21,9 +22,16 @@ const handleAuthCallback = (req, res) => {
     { expiresIn: process.env.JWT_EXPIRES_IN }
   );
 
+  res.cookie('token', token, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax',
+    maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
+  });
+
   // 2. Redirect to Frontend with Token
   // Frontend will read this param, save it to localStorage/Zustand, and strip it from URL
-  res.redirect(`${process.env.CLIENT_URL}/auth/callback?token=${token}`);
+  res.redirect(`${process.env.CLIENT_URL}/auth/callback`);
 };
 
 // --- Google Routes ---
@@ -43,5 +51,11 @@ router.get(
   passport.authenticate('github', { session: false, failureRedirect: '/login/failed' }),
   handleAuthCallback
 );
+
+router.get('/me', authMiddleware, getMe);
+router.post('/logout', (req, res) => {
+  res.clearCookie('token');
+  res.json({ message: 'Logged out' });
+});
 
 export default router;

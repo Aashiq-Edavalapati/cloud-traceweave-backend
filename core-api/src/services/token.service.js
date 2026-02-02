@@ -2,7 +2,7 @@ import jwt from 'jsonwebtoken';
 import moment from 'moment';
 import config from '../config/config.js';
 
-const generateToken = (userId, expires, type, secret = config.jwt.secret) => {
+export const generateToken = (userId, expires, type, secret = config.jwt.secret) => {
   const payload = {
     sub: userId,
     iat: moment().unix(),
@@ -12,7 +12,7 @@ const generateToken = (userId, expires, type, secret = config.jwt.secret) => {
   return jwt.sign(payload, secret);
 };
 
-const generateAuthTokens = async (user) => {
+export const generateAuthTokens = async (user) => {
   const accessTokenExpires = moment().add(config.jwt.accessExpirationMinutes, 'minutes');
   const accessToken = generateToken(user.id, accessTokenExpires, 'access');
 
@@ -22,8 +22,4 @@ const generateAuthTokens = async (user) => {
       expires: accessTokenExpires.toDate(),
     },
   };
-};
-
-export default {
-  generateAuthTokens,
 };

@@ -1,15 +1,15 @@
 import httpStatus from 'http-status';
-import authService from '../services/auth.service.js';
-import tokenService from '../services/token.service.js';
+import { createUser, loginUserWithEmailAndPassword, getUserById } from '../services/auth.service.js';
+import { generateAuthTokens } from '../services/token.service.js';
 import config from '../config/config.js';
 
 const catchAsync = (fn) => (req, res, next) => {
   Promise.resolve(fn(req, res, next)).catch((err) => next(err));
 };
 
-const register = catchAsync(async (req, res) => {
-  const user = await authService.createUser(req.body);
-  const tokens = await tokenService.generateAuthTokens(user);
+export const register = catchAsync(async (req, res) => {
+  const user = await createUser(req.body);
+  const tokens = await generateAuthTokens(user);
   
   res.cookie('token', tokens.access.token, {
     httpOnly: true,
@@ -21,10 +21,10 @@ const register = catchAsync(async (req, res) => {
   res.status(httpStatus.CREATED).send({ user: { id: user.id, email: user.email, full_name: user.fullName } });
 });
 
-const login = catchAsync(async (req, res) => {
+export const login = catchAsync(async (req, res) => {
   const { email, password } = req.body;
-  const user = await authService.loginUserWithEmailAndPassword(email, password);
-  const tokens = await tokenService.generateAuthTokens(user);
+  const user = await loginUserWithEmailAndPassword(email, password);
+  const tokens = await generateAuthTokens(user);
   
   res.cookie('token', tokens.access.token, {
     httpOnly: true,
@@ -36,7 +36,15 @@ const login = catchAsync(async (req, res) => {
   res.send({ user: { id: user.id, email: user.email, full_name: user.fullName } });
 });
 
-export default {
-  register,
-  login,
+export const getMe = async (req, res) => {
+  const user = await getUserById(req.user.id);
+
+  if (!user) {
+    return res.status(httpStatus.NOT_FOUND).json({ message: 'User not found', isAuthenticated: false });
+  }
+
+  res.json({
+    isAuthenticated: true,
+    user,
+  });
 };
