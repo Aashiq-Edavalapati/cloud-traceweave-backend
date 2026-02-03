@@ -3,15 +3,21 @@ import authMiddleware from '../middlewares/auth.middleware.js';
 import {
   createWorkspace,
   getMyWorkspaces,
-  getWorkspaceById
+  getWorkspaceById,
+  deleteWorkspace
 } from '../controllers/workspace.controller.js';
 
 const router = express.Router();
 
-router.post('/', authMiddleware, createWorkspace);
+// Protect all workspace routes
+router.use(authMiddleware);
 
-router.get('/', auth, getMyWorkspaces);
+router.post('/create', authMiddleware, createWorkspace);
 
-router.get('/:workspaceId', auth, getWorkspaceById);
+router.get('/', authMiddleware, getMyWorkspaces);
+
+router.get('/:workspaceId', authMiddleware, getWorkspaceById);
+
+router.delete('/:workspaceId', authMiddleware, deleteWorkspace);
 
 export default router;

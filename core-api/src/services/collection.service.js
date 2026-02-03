@@ -78,13 +78,20 @@ export class CollectionService {
     if (!collection) {
       throw new ApiError(
         httpStatus.NOT_FOUND,
-        "Collection not found"
+        'Collection not found'
       );
     }
 
-    return prisma.collection.update({
+    await prisma.collection.update({
       where: { id: collectionId },
       data: { deletedAt: new Date() }
     });
+
+    return {
+      success: true,
+      message: 'Collection deleted successfully',
+      collectionId
+    };
+
   }
 }

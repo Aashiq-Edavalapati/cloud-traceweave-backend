@@ -51,3 +51,18 @@ export const getWorkspaceById = async (req, res, next) => {
     next(error);
   }
 };
+
+export const deleteWorkspace = async (req, res, next) => {
+  try {
+    const { workspaceId } = req.params;
+    const userId = req.user.id;
+
+    await workspaceService.deleteWorkspace(workspaceId, userId);
+
+    res.status(200).json({
+      message: 'Workspace deleted successfully'
+    });
+  } catch (error) {
+    next(error);
+  }
+};

@@ -11,7 +11,7 @@ const router = express.Router();
 // Protect all collection routes
 router.use(authMiddleware);
 
-router.post('/', createCollection);
+router.post('/workspace/:workspaceId', createCollection);
 router.get('/workspace/:workspaceId', getCollectionsByWorkspace);
 router.delete('/:collectionId', deleteCollection);
 

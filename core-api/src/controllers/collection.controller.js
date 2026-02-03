@@ -1,16 +1,25 @@
 import httpStatus from 'http-status';
 import { CollectionService } from '../services/collection.service.js';
+import { workspaceService } from '../services/workspace.service.js';
+
 
 const catchAsync = (fn) => (req, res, next) =>
   Promise.resolve(fn(req, res, next)).catch(next);
 
 export const createCollection = catchAsync(async (req, res) => {
-  const { workspaceId, name, parentId } = req.body;
+  const { name, parentId } = req.body;
+  const { workspaceId } = req.params;
+  const userId = req.user.id;
+  console.log('userId:', req.user.id);
+ console.log('workspaceId:', workspaceId);
+
+  // Validate workspace ownership / access
+  await workspaceService.getWorkspaceById(workspaceId, userId);
 
   const collection = await CollectionService.createCollection({
     workspaceId,
     name,
-    parentId
+    parentId,
   });
 
   res.status(httpStatus.CREATED).send(collection);
@@ -28,7 +37,8 @@ export const getCollectionsByWorkspace = catchAsync(async (req, res) => {
 export const deleteCollection = catchAsync(async (req, res) => {
   const { collectionId } = req.params;
 
-  await CollectionService.softDeleteCollection(collectionId);
+  const result =
+    await CollectionService.softDeleteCollection(collectionId);
 
-  res.status(httpStatus.NO_CONTENT).send();
+  res.status(httpStatus.OK).send(result);
 });
