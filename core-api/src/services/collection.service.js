@@ -2,6 +2,7 @@ import prisma from "../config/prisma.js";
 import httpStatus from "http-status";
 import ApiError from "../utils/ApiError.js";
 
+
 export class CollectionService {
   static async createCollection({ workspaceId, name, parentId = null }) {
     if (!workspaceId || !name) {

@@ -7,14 +7,23 @@ import {
   updateCollection
 } from '../controllers/collection.controller.js';
 
+import { requireWorkspaceRole } from '../middlewares/rbac.middleware.js';
+
 const router = express.Router();
 
 // Protect all collection routes
 router.use(authMiddleware);
 
-router.post('/workspace/:workspaceId', createCollection);
-router.get('/workspace/:workspaceId', getCollectionsByWorkspace);
-router.delete('/:collectionId', deleteCollection);
-router.patch('/:collectionId', updateCollection);
+// Creator/Update = EDITOR (or better)
+// Delete = OWNER
+// Read = VIEWER (or better)
+
+router.post('/workspace/:workspaceId', requireWorkspaceRole('EDITOR'), createCollection);
+
+router.get('/workspace/:workspaceId', requireWorkspaceRole('VIEWER'), getCollectionsByWorkspace);
+
+router.delete('/:collectionId', requireWorkspaceRole('OWNER'), deleteCollection);
+
+router.patch('/:collectionId', requireWorkspaceRole('EDITOR'), updateCollection);
 
 export default router;
