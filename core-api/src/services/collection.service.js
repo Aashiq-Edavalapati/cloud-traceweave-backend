@@ -2,6 +2,7 @@ import prisma from "../config/prisma.js";
 import httpStatus from "http-status";
 import ApiError from "../utils/ApiError.js";
 
+
 export class CollectionService {
   static async createCollection({ workspaceId, name, parentId = null }) {
     if (!workspaceId || !name) {
@@ -93,5 +94,26 @@ export class CollectionService {
       collectionId
     };
 
+  }
+
+  static async updateCollection(collectionId, updateBody) {
+    const collection = await prisma.collection.findFirst({
+      where: {
+        id: collectionId,
+        deletedAt: null
+      }
+    });
+
+    if (!collection) {
+      throw new ApiError(
+        httpStatus.NOT_FOUND,
+        'Collection not found'
+      );
+    }
+
+    return prisma.collection.update({
+      where: { id: collectionId },
+      data: updateBody
+    });
   }
 }

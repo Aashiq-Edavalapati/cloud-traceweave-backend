@@ -66,3 +66,95 @@ export const deleteWorkspace = async (req, res, next) => {
     next(error);
   }
 };
+
+export const updateWorkspace = async (req, res, next) => {
+  try {
+    const { workspaceId } = req.params;
+    const userId = req.user.id;
+    const { name, description } = req.body;
+
+    const workspace = await workspaceService.updateWorkspace(
+      workspaceId,
+      userId,
+      { name, description }
+    );
+
+    res.status(200).json({
+      message: 'Workspace updated successfully',
+      data: workspace
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const addMemberToWorkspace = async (req, res, next) => {
+  try {
+    const { workspaceId } = req.params;
+    const { email, role } = req.body;
+    const userId = req.user.id;
+
+    if (!email) {
+      return res.status(400).json({ message: 'Email is required' });
+    }
+
+    const member = await workspaceService.addMember(
+      workspaceId,
+      userId,
+      email,
+      role
+    );
+
+    res.status(201).json({
+      message: 'Member added successfully',
+      data: member,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const removeMemberFromWorkspace = async (req, res, next) => {
+  try {
+    const { workspaceId, userId: memberUserId } = req.params;
+    const currentUserId = req.user.id;
+
+    await workspaceService.removeMember(
+      workspaceId,
+      currentUserId,
+      memberUserId
+    );
+
+    res.status(200).json({
+      message: 'Member removed successfully',
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+
+export const updateMemberRole = async (req, res, next) => {
+  try {
+    const { workspaceId, userId: memberUserId } = req.params;
+    const { role } = req.body;
+    const currentUserId = req.user.id; // Not strictly needed for service call if role check done at route, but good for context if needed later
+
+    if (!role || !['EDITOR', 'VIEWER'].includes(role)) {
+      return res.status(400).json({ message: 'Valid role (EDITOR, VIEWER) is required' });
+    }
+
+    const updatedMember = await workspaceService.updateMemberRole(
+      workspaceId,
+      memberUserId,
+      role
+    );
+
+    res.status(200).json({
+      message: 'Member role updated successfully',
+      data: updatedMember,
+    });
+  } catch (error) {
+    next(error);
+  }
+};

@@ -4,7 +4,7 @@ import config from '../config/config.js';
 
 export const generateToken = (userId, expires, type, secret = config.jwt.secret) => {
   const payload = {
-    sub: userId,
+    id: userId,
     iat: moment().unix(),
     exp: expires.unix(),
     type,
