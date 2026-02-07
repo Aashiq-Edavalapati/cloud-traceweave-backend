@@ -20,8 +20,9 @@ const executionSchema = new mongoose.Schema({
 
   // Timing (Waterfall metrics in milliseconds)
   timings: {
-    dns: Number,       // DNS Lookup
-    tls: Number,       // SSL Handshake
+    dnsLookup: Number,    // Time for DNS resolution
+    tcpConnection: Number, // Time to establish TCP connection
+    tlsHandshake: Number, // Time for TLS handshake (if HTTPS)
     firstByte: Number, // TTFB (Time To First Byte)
     download: Number,  // Content Download
     total: Number      // Total Duration
