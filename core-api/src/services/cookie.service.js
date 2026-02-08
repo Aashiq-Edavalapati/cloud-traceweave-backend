@@ -1,3 +1,4 @@
+// backend/core-api/src/services/cookie.service.js
 import { CookieJar, Cookie } from 'tough-cookie';
 import CookieJarModel from '../models/cookie-jar.model.js';
 
@@ -5,29 +6,52 @@ import CookieJarModel from '../models/cookie-jar.model.js';
  * Loads cookies from Mongo into a fresh Tough-Cookie Jar
  */
 export const loadCookieJar = async (userId, workspaceId, domain) => {
-  const jar = new CookieJar();
+  // CRITICAL FIX: Disable Public Suffix checks for Dev Tool flexibility
+  const jar = new CookieJar(null, { rejectPublicSuffixes: false });
   
-  // 1. Fetch relevant cookies from Mongo
-  // We fetch cookies for the specific domain and parent domains (basic logic)
-  // tough-cookie handles the strict matching, we just need to load candidates.
+  // 1. Generate domain search list
+  const domainsToSearch = [domain];
+  if (!domain.startsWith('.')) {
+    domainsToSearch.push(`.${domain}`);
+  }
+  
+  const parts = domain.split('.');
+  let currentParts = [...parts];
+  while (currentParts.length > 2) {
+    currentParts.shift();
+    const parent = currentParts.join('.');
+    domainsToSearch.push(parent);
+    domainsToSearch.push(`.${parent}`);
+  }
+
+  // 2. Fetch relevant cookies
   const storedCookies = await CookieJarModel.find({
     userId,
     workspaceId,
-    // Simple regex to match domain or subdomains. 
-    // In production, we might load all cookies for the workspace to be safe, 
-    // but filtering by domain string inclusion is a good optimization.
-    domain: { $regex: domain, $options: 'i' } 
+    domain: { $in: domainsToSearch }
   });
 
-  // 2. Put them into the Jar
+  // 3. Put them into the Jar
   for (const doc of storedCookies) {
-    // If we stored the raw object, we can reconstruct
     if (doc.raw) {
-      const cookie = Cookie.fromJSON(doc.raw);
-      // We must handle the URL for the cookie to be placed correctly
-      // We assume https for now to allow Secure cookies to be set
-      const cookieUrl = `https://${doc.domain}${doc.path || '/'}`;
-      await jar.setCookie(cookie, cookieUrl);
+      try {
+        const cookie = Cookie.fromJSON(doc.raw);
+        
+        // Ensure domain is set for validation
+        if (!cookie.domain) {
+            cookie.domain = doc.domain;
+        }
+
+        // URL Construction
+        const cleanDomain = doc.domain.startsWith('.') ? doc.domain.substring(1) : doc.domain;
+        const cookieUrl = `https://${cleanDomain}${doc.path || '/'}`;
+        
+        // CRITICAL FIX: ignoreError: true forces the cookie in, even if the domain looks "public"
+        await jar.setCookie(cookie, cookieUrl, { ignoreError: true });
+        
+      } catch (err) {
+        console.warn(`[CookieService] Failed to load cookie ${doc.key}:`, err.message);
+      }
     }
   }
 
@@ -38,14 +62,16 @@ export const loadCookieJar = async (userId, workspaceId, domain) => {
  * Saves modified cookies from the Jar back to Mongo
  */
 export const persistCookieJar = async (jar, userId, workspaceId, responseUrl) => {
-  // 1. Get all cookies from the jar for this URL
+  // 1. Get all cookies
   const cookies = await jar.getCookies(responseUrl);
 
   // 2. Upsert each cookie into Mongo
   for (const cookie of cookies) {
-    const domain = cookie.domain || new URL(responseUrl).hostname;
-    
-    // Serialized JSON from tough-cookie
+    let domain = cookie.domain;
+    if (!domain) {
+        domain = new URL(responseUrl).hostname;
+    }
+
     const rawCookie = cookie.toJSON();
 
     await CookieJarModel.findOneAndUpdate(

@@ -48,3 +48,15 @@ export const getMe = async (req, res) => {
     user,
   });
 };
+
+export const logout = async (req, res) => {
+  // 1. Clear the Auth Token (Cookie)
+  res.clearCookie('token');
+
+  // 2. Clear the Request Cookie Jar for this user
+  if (req.user && req.user.id) {
+    await clearUserCookies(req.user.id);
+  }
+
+  res.json({ message: 'Logged out successfully' });
+};

@@ -6,195 +6,200 @@ import ExecutionLog from '../models/execution.model.js';
 import prisma from '../config/prisma.js';
 import { environmentService } from '../services/environment.service.js';
 import { substituteVariables } from '../services/variableSubstitution.service.js';
+import { loadCookieJar, persistCookieJar } from '../services/cookie.service.js';
 
 export const requestController = {
-    createRequest: catchAsync(async (req, res) => {
-        const { collectionId } = req.params;
-        const request = await requestDefinitionService.createRequest({
-            ...req.body,
-            collectionId
-        });
-        res.status(httpStatus.CREATED).send(request);
-    }),
 
-    getRequestsByCollection: catchAsync(async (req, res) => {
-        const requests = await requestDefinitionService.getRequestsByCollection(
-            req.params.collectionId
-        );
-        res.send(requests);
-    }),
+  /* ===========================
+     CRUD
+  ============================ */
 
-    updateRequest: catchAsync(async (req, res) => {
-        const request = await requestDefinitionService.updateRequest(
-            req.params.requestId,
-            req.body,
-            req.user.id
-        );
-        res.send(request);
-    }),
+  createRequest: catchAsync(async (req, res) => {
+    const { collectionId } = req.params;
+    const request = await requestDefinitionService.createRequest({
+      ...req.body,
+      collectionId
+    });
+    res.status(httpStatus.CREATED).send(request);
+  }),
 
-    deleteRequest: catchAsync(async (req, res) => {
-        await requestDefinitionService.softDeleteRequest(
-            req.params.requestId,
-            req.user.id
-        );
-        res.status(httpStatus.NO_CONTENT).send();
-    }),
+  getRequestsByCollection: catchAsync(async (req, res) => {
+    const requests = await requestDefinitionService.getRequestsByCollection(
+      req.params.collectionId
+    );
+    res.send(requests);
+  }),
 
-    sendRequest: catchAsync(async (req, res) => {
-        try {
-            const { requestId } = req.params;
-            const userId = req.user.id;
+  updateRequest: catchAsync(async (req, res) => {
+    const request = await requestDefinitionService.updateRequest(
+      req.params.requestId,
+      req.body,
+      req.user.id
+    );
+    res.send(request);
+  }),
 
-            // If the user sends a POST without a body (or Content-Type issues), req.body is undefined.
-            // We default to {} to prevent "Cannot destructure property 'overrides' of undefined".
-            const { overrides = {}, environmentId } = req.body || {};
+  deleteRequest: catchAsync(async (req, res) => {
+    await requestDefinitionService.softDeleteRequest(
+      req.params.requestId,
+      req.user.id
+    );
+    res.status(httpStatus.NO_CONTENT).send();
+  }),
 
-            // 2. Fetch Source of Truth
-            const requestDef = await prisma.requestDefinition.findUnique({
-                where: { id: requestId },
-                include: { collection: true },
-            });
+  /* ===========================
+     EXECUTE SAVED REQUEST
+  ============================ */
 
-            if (!requestDef) {
-                return res.status(404).json({ error: 'Request definition not found' });
-            }
+  sendRequest: catchAsync(async (req, res) => {
+    const { requestId } = req.params;
+    const userId = req.user.id;
 
-            const workspaceId = requestDef.collection.workspaceId;
+    const { overrides = {}, environmentId } = req.body || {};
 
-            // 3. Merge: Database Config + Overrides
-            // We use '??' (Nullish Coalescing) instead of '||' so that if user sends overrides.body = "" (empty string),
-            // it is RESPECTED instead of falling back to DB value.
-            let config = {
-                method: overrides.method ?? requestDef.method,
-                url: overrides.url ?? requestDef.url,
-                headers: overrides.headers ?? requestDef.headers ?? {},
-                body: overrides.body ?? requestDef.body,
-                params: overrides.params ?? requestDef.params ?? {},
-            };
+    // 1. Fetch request definition
+    const requestDef = await prisma.requestDefinition.findUnique({
+      where: { id: requestId },
+      include: { collection: true },
+    });
 
-            // 4. Variable Substitution (if environmentId provided)
-            if (environmentId) {
-                const variables = await environmentService.getVariablesForExecution(
-                    environmentId,
-                    userId,
-                    workspaceId
-                );
-                config = substituteVariables(config, variables);
-            }
+    if (!requestDef) {
+      return res.status(404).json({ error: 'Request definition not found' });
+    }
 
-            // 5. Execute
-            const result = await executeHttpRequest(config);
+    const workspaceId = requestDef.collection.workspaceId;
 
-            // 6. Log History
-            const executionLog = await ExecutionLog.create({
-                requestId: requestDef.id,
-                collectionId: requestDef.collectionId,
-                workspaceId: workspaceId,
-                environmentId: environmentId || null,
-                method: config.method,
-                url: config.url,
-                status: result.status,
-                statusText: result.statusText,
-                responseHeaders: result.headers,
-                responseBody: result.data,
-                responseSize: result.size,
-                timings: result.timings,
-                executedBy: userId,
-            });
+    // 2. Merge DB + Draft overrides
+    let config = {
+      method: overrides.method ?? requestDef.method,
+      url: overrides.url ?? requestDef.url,
+      headers: overrides.headers ?? requestDef.headers ?? {},
+      body: overrides.body ?? requestDef.body,
+      params: overrides.params ?? requestDef.params ?? {},
+    };
 
-            res.status(200).json({ ...result, historyId: executionLog._id });
+    // 3. Variable substitution
+    if (environmentId) {
+      const variables = await environmentService.getVariablesForExecution(
+        environmentId,
+        userId,
+        workspaceId
+      );
+      config = substituteVariables(config, variables);
+    }
 
-        } catch (error) {
-            console.error('Execution Error:', error);
-            res.status(500).json({ error: error.message || 'Failed to execute request' });
-        }
-    }),
+    // 4. LOAD COOKIE JAR
+    const domain = new URL(config.url).hostname;
+    const jar = await loadCookieJar(userId, workspaceId, domain);
 
-    /**
-   * Path B: Execute Ad-Hoc Request (Scratchpad)
-   * Route: POST /execute (No ID in URL)
-   */
-    executeAdHocRequest: catchAsync(async (req, res) => {
-        try {
-            const userId = req.user.id;
-            // 1. We require workspaceId to enforce RBAC (Users can't just use our server as a free proxy)
-            const { workspaceId, method, url, headers, body, params, environmentId } = req.body;
+    // 5. EXECUTE
+    const result = await executeHttpRequest(config, jar);
 
-            if (!workspaceId || !url || !method) {
-                return res.status(400).json({ error: 'Missing workspaceId, url, or method' });
-            }
+    // 6. SAVE COOKIES (if any)
+    if (result.headers?.['set-cookie']) {
+      await persistCookieJar(jar, userId, workspaceId, config.url);
+    }
 
-            const member = await prisma.workspaceMember.findUnique({
-                where: {
-                    workspaceId_userId: {
-                        workspaceId,
-                        userId
-                    }
-                }
-            });
+    // 7. LOG HISTORY
+    const executionLog = await ExecutionLog.create({
+      requestId: requestDef.id,
+      collectionId: requestDef.collectionId,
+      workspaceId,
+      environmentId: environmentId || null,
+      method: config.method,
+      url: config.url,
+      status: result.status,
+      statusText: result.statusText,
+      responseHeaders: result.headers,
+      responseBody: result.data,
+      responseSize: result.size,
+      timings: result.timings,
+      executedBy: userId,
+    });
 
-            // Only EDITOR or OWNER can execute.
-            if (!member || (member.role !== 'EDITOR' && member.role !== 'OWNER')) {
-                return res.status(403).json({ error: 'You do not have permission to execute requests in this workspace' });
-            }
+    res.status(200).json({
+      ...result,
+      historyId: executionLog._id
+    });
+  }),
 
-            // 2. Build Config directly from Body
-            let config = { method, url, headers, body, params };
+  /* ===========================
+     EXECUTE AD-HOC REQUEST
+  ============================ */
 
-            // 3. Variable Substitution (if environmentId provided)
-            if (environmentId) {
-                const variables = await environmentService.getVariablesForExecution(
-                    environmentId,
-                    userId,
-                    workspaceId
-                );
-                config = substituteVariables(config, variables);
-            }
+  executeAdHocRequest: catchAsync(async (req, res) => {
+    console.log('Executing Ad-Hoc Request with body:', req.body);
+    const userId = req?.user.id;
+    const { workspaceId, method, url, headers, body, params, environmentId } = req.body;
 
-            // 4. Execute
-            const result = await executeHttpRequest(config);
+    if (!workspaceId || !url || !method) {
+      return res.status(400).json({ error: 'Missing workspaceId, url, or method' });
+    }
 
-            // 5. Log History (Unlinked to any Request Definition)
-            // We store workspaceId so it appears in the "Workspace History"
-            const executionLog = await ExecutionLog.create({
-                requestId: null, // Null indicates Ad-Hoc
-                collectionId: null,
-                workspaceId: workspaceId,
-                environmentId: environmentId || null,
-                method: config.method,
-                url: config.url,
-                status: result.status,
-                statusText: result.statusText,
-                responseHeaders: result.headers,
-                responseBody: result.data,
-                responseSize: result.size,
-                timings: result.timings,
-                executedBy: userId,
-            });
+    // 1. Build config
+    let config = { method, url, headers: headers ?? {}, body, params };
 
-            res.status(200).json({ ...result, historyId: executionLog._id });
+    // 2. Variable substitution
+    if (environmentId) {
+      const variables = await environmentService.getVariablesForExecution(
+        environmentId,
+        userId,
+        workspaceId
+      );
+      config = substituteVariables(config, variables);
+    }
 
-        } catch (error) {
-            console.error('Ad-Hoc Execution Error:', error);
-            res.status(500).json({ error: error.message || 'Failed to execute request' });
-        }
-    }),
+    // 3. LOAD COOKIE JAR
+    const domain = new URL(config.url).hostname;
+    const jar = await loadCookieJar(userId, workspaceId, domain);
 
-    getRequestHistory: catchAsync(async (req, res) => {
-        try {
-            const { requestId } = req.params;
-            const { environmentId } = req.body;
-            const history = await ExecutionLog.find({
-                requestId,
-                environmentId,
-                executedBy: req.user.id
-            })
-                .sort({ createdAt: -1 })
-                .limit(20);
-            res.json(history);
-        } catch (error) {
-            res.status(500).json({ error: 'Failed to fetch history' });
-        }
-    }),
+    // 4. EXECUTE
+    const result = await executeHttpRequest(config, jar);
+
+    // 5. SAVE COOKIES
+    if (result.headers?.['set-cookie']) {
+      await persistCookieJar(jar, userId, workspaceId, config.url);
+    }
+
+    // 6. LOG HISTORY (Ad-hoc)
+    const executionLog = await ExecutionLog.create({
+      requestId: null,
+      collectionId: null,
+      workspaceId,
+      environmentId: environmentId || null,
+      method: config.method,
+      url: config.url,
+      status: result.status,
+      statusText: result.statusText,
+      responseHeaders: result.headers,
+      responseBody: result.data,
+      responseSize: result.size,
+      timings: result.timings,
+      executedBy: userId,
+    });
+
+    res.status(200).json({
+      ...result,
+      historyId: executionLog._id
+    });
+  }),
+
+  /* ===========================
+     HISTORY
+  ============================ */
+
+  getRequestHistory: catchAsync(async (req, res) => {
+    const { requestId } = req.params;
+    const { environmentId } = req.body;
+
+    const history = await ExecutionLog.find({
+      requestId,
+      environmentId,
+      executedBy: req.user.id
+    })
+      .sort({ createdAt: -1 })
+      .limit(20);
+
+    res.json(history);
+  }),
 };
