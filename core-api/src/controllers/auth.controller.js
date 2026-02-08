@@ -1,10 +1,11 @@
 import httpStatus from 'http-status';
 import { createUser, loginUserWithEmailAndPassword, getUserById } from '../services/auth.service.js';
 import { generateAuthTokens } from '../services/token.service.js';
+import { clearUserCookies } from '../services/cookie.service.js';
 import config from '../config/config.js';
 
 const catchAsync = (fn) => (req, res, next) => {
-  Promise.resolve(fn(req, res, next)).catch((err) => next(err));
+  return Promise.resolve(fn(req, res, next)).catch((err) => next(err));
 };
 
 export const register = catchAsync(async (req, res) => {
