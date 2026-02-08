@@ -95,6 +95,30 @@ export const environmentService = {
         });
     },
 
+    async updateEnvironment(environmentId, userId, updateBody) {
+        const environment = await prisma.environment.findUnique({
+            where: { id: environmentId },
+            include: { workspace: true },
+        });
+
+        if (!environment) throw new ApiError(httpStatus.NOT_FOUND, 'Environment not found');
+
+        const userAccess = await prisma.userEnvironment.findUnique({
+            where: {
+                userId_environmentId: { userId, environmentId },
+            },
+        });
+
+        if (!userAccess) {
+            throw new ApiError(httpStatus.FORBIDDEN, 'Access denied to this environment');
+        }
+
+        return prisma.environment.update({
+            where: { id: environmentId },
+            data: updateBody,
+        });
+    },
+
     async togglePersistent(environmentId, userId, isPersistent) {
         return prisma.$transaction(async (tx) => {
             const environment = await tx.environment.findUnique({
