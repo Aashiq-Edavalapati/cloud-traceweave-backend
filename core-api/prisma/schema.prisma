@@ -1,14 +1,17 @@
-
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
-  provider  = "postgresql"
+  provider = "postgresql"
 }
-        
 
-// OP-347: User Auth
+enum WorkspaceRole {
+  OWNER
+  EDITOR
+  VIEWER
+}
+
 model User {
   id            String    @id @default(uuid())
   email         String    @unique
@@ -32,29 +35,22 @@ model User {
 }
 
 model Identity {
-  id           String    @id @default(uuid())
-  userId       String    @map("user_id")
-  
-  // Auth Data
-  provider     String    // 'email', 'google', 'github'
-  providerId   String?   @map("provider_id") // 'sub' from OAuth, null for email
-  passwordHash String?   @map("password_hash") // Only for 'email' provider
-  
-  // Optional: Store OAuth tokens if we ever need to fetch data from them later
-  accessToken  String?   @map("access_token") 
-  refreshToken String?   @map("refresh_token")
+  id           String   @id @default(uuid())
+  userId       String   @map("user_id")
+  provider     String
+  providerId   String?  @map("provider_id")
+  passwordHash String?  @map("password_hash")
+  accessToken  String?  @map("access_token")
+  refreshToken String?  @map("refresh_token")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+  user         User     @relation(fields: [userId], references: [id])
 
-  createdAt    DateTime  @default(now()) @map("created_at")
-  updatedAt    DateTime  @updatedAt @map("updated_at")
-
-  user         User      @relation(fields: [userId], references: [id])
-
-  @@unique([provider, providerId]) // Prevent duplicate OAuth links
-  @@unique([userId, provider])     // One Google link per user
+  @@unique([provider, providerId])
+  @@unique([userId, provider])
   @@map("identities")
 }
 
-// OP-348: Workspaces
 model Workspace {
   id          String   @id @default(uuid())
   name        String
@@ -71,61 +67,52 @@ model Workspace {
   collections Collection[]
   environments Environment[]
   userEnvironments UserEnvironment[]
+  workflows Workflow[]
 
   @@map("workspaces")
 }
 
-// OP-349: RBAC (Many-to-Many via explicit table)
 model WorkspaceMember {
-  id          String   @id @default(uuid())
-  workspaceId String   @map("workspace_id")
-  userId      String   @map("user_id")
-  role        String   @default("VIEWER") // OWNER, EDITOR, VIEWER
+  id          String        @id @default(uuid())
+  workspaceId String        @map("workspace_id")
+  userId      String        @map("user_id")
+  role        WorkspaceRole @default(VIEWER)
+  joinedAt    DateTime      @default(now()) @map("joined_at")
+  user        User          @relation(fields: [userId], references: [id])
+  workspace   Workspace     @relation(fields: [workspaceId], references: [id])
 
-  joinedAt    DateTime @default(now()) @map("joined_at")
-
-  workspace   Workspace @relation(fields: [workspaceId], references: [id])
-  user        User      @relation(fields: [userId], references: [id])
-
-  @@unique([workspaceId, userId]) // Prevent duplicate membership
+  @@unique([workspaceId, userId])
   @@map("workspace_members")
 }
 
-// OP-360: Collections (Recursive Folder Structure)
 model Collection {
-  id          String   @id @default(uuid())
-  workspaceId String   @map("workspace_id")
+  id          String              @id @default(uuid())
+  workspaceId String              @map("workspace_id")
   name        String
-  parentId    String?  @map("parent_id") // For nesting folders
-  
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @updatedAt @map("updated_at")
-  deletedAt   DateTime? @map("deleted_at")
-
-  // Relations
-  workspace   Workspace @relation(fields: [workspaceId], references: [id])
-  parent      Collection? @relation("SubCollections", fields: [parentId], references: [id])
-  children    Collection[] @relation("SubCollections")
+  parentId    String?             @map("parent_id")
+  createdAt   DateTime            @default(now()) @map("created_at")
+  updatedAt   DateTime            @updatedAt @map("updated_at")
+  deletedAt   DateTime?           @map("deleted_at")
+  parent      Collection?         @relation("SubCollections", fields: [parentId], references: [id])
+  children    Collection[]        @relation("SubCollections")
+  workspace   Workspace           @relation(fields: [workspaceId], references: [id])
   requests    RequestDefinition[]
 
   @@map("collections")
 }
 
-// OP-361: Request Definitions
 model RequestDefinition {
-  id           String   @id @default(uuid())
-  collectionId String   @map("collection_id")
+  id           String     @id @default(uuid())
+  collectionId String     @map("collection_id")
   name         String
-  method       String   // GET, POST, PUT, etc.
+  method       String
   url          String
-  headers      Json?    
+  headers      Json?
   body         Json?
   params       Json?
-  
-  createdAt    DateTime @default(now()) @map("created_at")
-  updatedAt    DateTime @updatedAt @map("updated_at")
-  deletedAt    DateTime? @map("deleted_at")
-
+  createdAt    DateTime   @default(now()) @map("created_at")
+  updatedAt    DateTime   @updatedAt @map("updated_at")
+  deletedAt    DateTime?  @map("deleted_at")
   collection   Collection @relation(fields: [collectionId], references: [id])
 
   @@map("request_definitions")
@@ -185,4 +172,26 @@ model EnvironmentVariable {
 
   @@unique([environmentId, key])
   @@map("environment_variables")
+}
+
+model Workflow {
+  id          String   @id @default(uuid())
+  workspaceId String   @map("workspace_id")
+  name        String
+  description String?
+  
+  // JSON Structure:
+  // [
+  //   { "requestId": "uuid", "name": "Login", "stopOnFailure": true },
+  //   { "requestId": "uuid", "name": "Get Profile" }
+  // ]
+  steps       Json     
+
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  deletedAt   DateTime? @map("deleted_at")
+
+  workspace   Workspace @relation(fields: [workspaceId], references: [id])
+
+  @@map("workflows")
 }
