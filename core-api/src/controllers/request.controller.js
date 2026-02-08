@@ -108,7 +108,11 @@ export const requestController = {
                 executedBy: userId,
             });
 
-            res.status(200).json({ ...result, historyId: executionLog._id });
+            res.status(200).json({
+                ...result,
+                time: result.timings.total,
+                historyId: executionLog._id
+            });
 
         } catch (error) {
             console.error('Execution Error:', error);
@@ -183,7 +187,11 @@ export const requestController = {
                 executedBy: userId,
             });
 
-            res.status(200).json({ ...result, historyId: executionLog._id });
+            res.status(200).json({
+                ...result,
+                time: result.timings.total,
+                historyId: executionLog._id
+            });
 
         } catch (error) {
             console.error('Ad-Hoc Execution Error:', error);
