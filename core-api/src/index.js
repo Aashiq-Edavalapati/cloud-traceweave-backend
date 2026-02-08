@@ -16,8 +16,11 @@ import routes from "./routes/index.js";
 import cookieParser from "cookie-parser";
 import passport from "./config/passport.js";
 import prisma from "./config/prisma.js";
+import connectMongo from "./config/mongo.js";
 
 const app = express();
+
+connectMongo();
 
 // Global Middlewares
 app.use(helmet()); // Security headers

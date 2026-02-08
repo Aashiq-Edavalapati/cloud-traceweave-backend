@@ -8,7 +8,8 @@ import {
   updateWorkspace,
   addMemberToWorkspace,
   removeMemberFromWorkspace,
-  updateMemberRole
+  updateMemberRole,
+  getWorkspaceHistory
 } from '../controllers/workspace.controller.js';
 
 import { requireWorkspaceRole } from '../middlewares/rbac.middleware.js';
@@ -44,6 +45,12 @@ router.patch(
   '/:workspaceId/members/:userId',
   requireWorkspaceRole('OWNER'),
   updateMemberRole
+);
+
+router.get(
+  '/:workspaceId/history', 
+  requireWorkspaceRole('VIEWER'), 
+  getWorkspaceHistory
 );
 
 
