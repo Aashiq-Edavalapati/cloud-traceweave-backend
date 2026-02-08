@@ -165,7 +165,11 @@ export const requestController = {
         try {
             const { requestId } = req.params;
             const { environmentId } = req.body;
-            const history = await ExecutionLog.find({ requestId, environmentId, req.user.id })
+            const history = await ExecutionLog.find({
+                requestId,
+                environmentId,
+                executedBy: req.user.id
+            })
                 .sort({ createdAt: -1 })
                 .limit(20);
             res.json(history);
