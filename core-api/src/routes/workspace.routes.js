@@ -8,7 +8,8 @@ import {
   updateWorkspace,
   addMemberToWorkspace,
   removeMemberFromWorkspace,
-  updateMemberRole
+  updateMemberRole,
+  getWorkspaceHistory
 } from '../controllers/workspace.controller.js';
 
 import {
@@ -46,8 +47,16 @@ router.patch(
   updateMemberRole
 );
 
+router.get(
+  '/:workspaceId/history',
+  requireWorkspaceRole('VIEWER'),
+  getWorkspaceHistory
+
+);
+
 router.post('/:workspaceId/environments', requireWorkspaceRole('EDITOR'), createEnvironment);
 router.get('/:workspaceId/environments', requireWorkspaceRole('VIEWER'), getWorkspaceEnvironments);
+
 
 export default router;
 

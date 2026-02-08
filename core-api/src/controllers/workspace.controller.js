@@ -1,4 +1,6 @@
 import { workspaceService } from '../services/workspace.service.js';
+import catchAsync from '../utils/catchAsync.js';
+import ExecutionLog from '../models/execution.model.js';
 
 export const createWorkspace = async (req, res, next) => {
   try {
@@ -166,3 +168,40 @@ export const updateMemberRole = async (req, res, next) => {
     next(error);
   }
 };
+
+/**
+ * Get Execution History for the entire Workspace
+ * Pagination: ?page=1&limit=20
+ */
+export const getWorkspaceHistory = catchAsync(async (req, res) => {
+  try {
+    const { workspaceId } = req.params;
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 20;
+    const skip = (page - 1) * limit;
+
+    // 1. Fetch Logs from MongoDB
+    // We sort by 'createdAt' desc (newest first)
+    const logs = await ExecutionLog.find({ workspaceId })
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit)
+      .lean(); // .lean() makes it faster (returns plain JSON, not Mongoose docs)
+
+    // 2. Count total for frontend pagination
+    const total = await ExecutionLog.countDocuments({ workspaceId });
+
+    res.status(200).json({
+      data: logs,
+      pagination: {
+        total,
+        page,
+        limit,
+        pages: Math.ceil(total / limit),
+      },
+    });
+  } catch (error) {
+    console.error('Error fetching workspace history:', error);
+    res.status(500).json({ error: 'Failed to fetch workspace history' });
+  }
+});
