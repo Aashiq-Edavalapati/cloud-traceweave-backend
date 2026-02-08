@@ -9,10 +9,10 @@ import { checkWorkspacePermission } from '../utils/rbac.utils.js';
  * @param {string} requiredRole - 'OWNER', 'EDITOR', 'VIEWER'
  */
 export const requireWorkspaceRole = (requiredRole) => async (req, res, next) => {
+    console.log("Entered requireWorkspaceRole middleware with role:", requiredRole);
     try {
         const userId = req.user.id;
-        let workspaceId = req.params.workspaceId;
-
+        let workspaceId = req?.params?.workspaceId || req.body?.workspaceId;
         // 1. Resolve workspaceId if not directly in params
         if (!workspaceId) {
             if (req.params.collectionId) {
@@ -38,9 +38,20 @@ export const requireWorkspaceRole = (requiredRole) => async (req, res, next) => 
                 }
                 workspaceId = request.collection.workspaceId;
                 req.requestDefinition = request; // Optimization
+            } else if (req.params.workflowId) {
+                const workflow = await prisma.workflow.findUnique({
+                    where: { id: req.params.workflowId },
+                    select: { workspaceId: true },
+                });
+
+                if (!workflow) {
+                    throw new ApiError(httpStatus.NOT_FOUND, 'Workflow not found');
+                }
+
+                workspaceId = workflow.workspaceId;
+                req.workflow = workflow; // optional optimization
             }
         }
-
         if (!workspaceId) {
             throw new ApiError(httpStatus.BAD_REQUEST, 'Could not determine workspace context');
         }
