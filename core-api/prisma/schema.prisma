@@ -13,19 +13,23 @@ enum WorkspaceRole {
 }
 
 model User {
-  id                     String                @id @default(uuid())
-  email                  String                @unique
-  fullName               String?               @map("full_name")
-  avatarUrl              String?               @map("avatar_url")
-  createdAt              DateTime              @default(now()) @map("created_at")
-  updatedAt              DateTime              @updatedAt @map("updated_at")
-  deletedAt              DateTime?             @map("deleted_at")
-  createdVariables       EnvironmentVariable[]
-  createdEnvironments    Environment[]
-  identities             Identity[]
+  id            String    @id @default(uuid())
+  email         String    @unique
+  fullName      String?   @map("full_name")
+  avatarUrl     String?   @map("avatar_url")
+  
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+  deletedAt     DateTime? @map("deleted_at") 
+
+  // Relations
+  identities    Identity[]        // <--- One User, Many Login Methods
+  workspaces    WorkspaceMember[]
+  ownedWorkspaces Workspace[]
+  
+  createdEnvironments Environment[]
+  createdVariables    EnvironmentVariable[]
   accessibleEnvironments UserEnvironment[]
-  workspaces             WorkspaceMember[]
-  ownedWorkspaces        Workspace[]
 
   @@map("users")
 }
@@ -48,19 +52,22 @@ model Identity {
 }
 
 model Workspace {
-  id               String            @id @default(uuid())
-  name             String
-  description      String?
-  ownerId          String            @map("owner_id")
-  createdAt        DateTime          @default(now()) @map("created_at")
-  updatedAt        DateTime          @updatedAt @map("updated_at")
-  deletedAt        DateTime?         @map("deleted_at")
-  collections      Collection[]
-  environments     Environment[]
+  id          String   @id @default(uuid())
+  name        String
+  description String?
+  ownerId     String   @map("owner_id")
+
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  deletedAt   DateTime? @map("deleted_at")
+
+  // Relations
+  owner       User     @relation(fields: [ownerId], references: [id])
+  members     WorkspaceMember[]
+  collections Collection[]
+  environments Environment[]
   userEnvironments UserEnvironment[]
-  members          WorkspaceMember[]
-  owner            User              @relation(fields: [ownerId], references: [id])
-  workflows        Workflow[]
+  workflows Workflow[]
 
   @@map("workspaces")
 }
@@ -111,18 +118,22 @@ model RequestDefinition {
   @@map("request_definitions")
 }
 
+// OP-370: Environments & Variables
 model Environment {
-  id               String                @id @default(uuid())
-  workspaceId      String                @map("workspace_id")
-  name             String
-  isPersistent     Boolean               @default(false) @map("is_persistent")
-  createdById      String                @map("created_by")
-  createdAt        DateTime              @default(now()) @map("created_at")
-  updatedAt        DateTime              @updatedAt @map("updated_at")
-  deletedAt        DateTime?             @map("deleted_at")
-  variables        EnvironmentVariable[]
-  createdBy        User                  @relation(fields: [createdById], references: [id])
-  workspace        Workspace             @relation(fields: [workspaceId], references: [id])
+  id           String   @id @default(uuid())
+  workspaceId  String   @map("workspace_id")
+  name         String
+  isPersistent Boolean  @default(false) @map("is_persistent")
+  createdById  String   @map("created_by")
+  
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+  deletedAt    DateTime? @map("deleted_at")
+
+  // Relations
+  workspace    Workspace @relation(fields: [workspaceId], references: [id])
+  createdBy    User      @relation(fields: [createdById], references: [id])
+  variables    EnvironmentVariable[]
   userEnvironments UserEnvironment[]
 
   @@map("environments")
@@ -133,9 +144,11 @@ model UserEnvironment {
   userId        String      @map("user_id")
   workspaceId   String      @map("workspace_id")
   environmentId String      @map("environment_id")
-  environment   Environment @relation(fields: [environmentId], references: [id])
+
+  // Relations
   user          User        @relation(fields: [userId], references: [id])
   workspace     Workspace   @relation(fields: [workspaceId], references: [id])
+  environment   Environment @relation(fields: [environmentId], references: [id])
 
   @@unique([userId, environmentId])
   @@map("user_environments")
@@ -145,14 +158,17 @@ model EnvironmentVariable {
   id            String      @id @default(uuid())
   environmentId String      @map("environment_id")
   key           String
-  value         String
+  value         String      // Encrypted if isSecret
   isSecret      Boolean     @default(false) @map("is_secret")
   createdById   String      @map("created_by")
+
   createdAt     DateTime    @default(now()) @map("created_at")
   updatedAt     DateTime    @updatedAt @map("updated_at")
   deletedAt     DateTime?   @map("deleted_at")
-  createdBy     User        @relation(fields: [createdById], references: [id])
+
+  // Relations
   environment   Environment @relation(fields: [environmentId], references: [id])
+  createdBy     User        @relation(fields: [createdById], references: [id])
 
   @@unique([environmentId, key])
   @@map("environment_variables")
