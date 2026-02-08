@@ -8,7 +8,7 @@ const router = express.Router();
 
 router.use(authenticateUser);
 
-router.post('/execute', requestController.executeAdHocRequest);
+router.post('/execute', requireWorkspaceRole('EDITOR'), requestController.executeAdHocRequest);
 
 router.post('/:collectionId', requireWorkspaceRole('EDITOR'), requestController.createRequest);
 
