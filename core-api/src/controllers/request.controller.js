@@ -51,17 +51,27 @@ export const requestController = {
      EXECUTE SAVED REQUEST
   ============================ */
 
-  sendRequest: catchAsync(async (req, res) => {
-    const { requestId } = req.params;
-    const userId = req.user.id;
+    sendRequest: catchAsync(async (req, res) => {
+        try {
+            const { requestId } = req.params;
+            const userId = req.user.id;
 
-    const { overrides = {}, environmentId } = req.body || {};
+            // More permissive ID check to avoid blocking valid IDs while still preventing junk
+            if (!requestId || requestId.length < 5) {
+                return res.status(400).json({ error: 'Invalid Request ID format' });
+            }
 
-    // 1. Fetch request definition
-    const requestDef = await prisma.requestDefinition.findUnique({
-      where: { id: requestId },
-      include: { collection: true },
-    });
+            // If the user sends a POST without a body (or Content-Type issues), req.body is undefined.
+            const { overrides = {}, environmentId } = req.body || {};
+
+            // 2. Fetch Request Definition
+            const requestDef = await prisma.requestDefinition.findUnique({
+                where: { id: requestId },
+                include: { collection: true },
+            }).catch(err => {
+                // If Prisma specifically fails due to ID format, catch it here
+                throw new Error(`Invalid ID lookup: ${err.message}`);
+            });
 
     if (!requestDef) {
       return res.status(404).json({ error: 'Request definition not found' });
@@ -69,24 +79,24 @@ export const requestController = {
 
     const workspaceId = requestDef.collection.workspaceId;
 
-    // 2. Merge DB + Draft overrides
-    let config = {
-      method: overrides.method ?? requestDef.method,
-      url: overrides.url ?? requestDef.url,
-      headers: overrides.headers ?? requestDef.headers ?? {},
-      body: overrides.body ?? requestDef.body,
-      params: overrides.params ?? requestDef.params ?? {},
-    };
+            // 3. Merge: Database Config + Overrides
+            let config = {
+                method: overrides.method ?? requestDef.method,
+                url: overrides.url ?? requestDef.url,
+                headers: overrides.headers ?? requestDef.headers ?? {},
+                body: overrides.body ?? requestDef.body,
+                params: overrides.params ?? requestDef.params ?? {},
+            };
 
-    // 3. Variable substitution
-    if (environmentId) {
-      const variables = await environmentService.getVariablesForExecution(
-        environmentId,
-        userId,
-        workspaceId
-      );
-      config = substituteVariables(config, variables);
-    }
+            // 4. Variable Substitution
+            if (environmentId) {
+                const variables = await environmentService.getVariablesForExecution(
+                    environmentId,
+                    userId,
+                    workspaceId
+                );
+                config = substituteVariables(config, variables);
+            }
 
     // 4. LOAD COOKIE JAR
     const domain = new URL(config.url).hostname;
@@ -117,27 +127,53 @@ export const requestController = {
       executedBy: userId,
     });
 
-    res.status(200).json({
-      ...result,
-      historyId: executionLog._id
-    });
-  }),
+            res.status(200).json({
+                ...result,
+                time: result.timings.total,
+                historyId: executionLog._id
+            });
 
-  /* ===========================
-     EXECUTE AD-HOC REQUEST
-  ============================ */
+        } catch (error) {
+            console.error('Execution Error:', error);
+            const isPrismaError = error.message?.toLowerCase().includes('prisma');
+            res.status(500).json({
+                error: isPrismaError ? 'Internal database error during execution' : (error.message || 'Failed to execute request')
+            });
+        }
+    }),
 
-  executeAdHocRequest: catchAsync(async (req, res) => {
-    console.log('Executing Ad-Hoc Request with body:', req.body);
-    const userId = req?.user.id;
-    const { workspaceId, method, url, headers, body, params, environmentId } = req.body;
+    /**
+   * Path B: Execute Ad-Hoc Request (Scratchpad)
+   * Route: POST /execute (No ID in URL)
+   */
+    executeAdHocRequest: catchAsync(async (req, res) => {
+        try {
+            const userId = req.user.id;
+            // 1. We require workspaceId to enforce RBAC (Users can't just use our server as a free proxy)
+            const { workspaceId, method, url, headers, body, params, environmentId } = req.body;
 
-    if (!workspaceId || !url || !method) {
-      return res.status(400).json({ error: 'Missing workspaceId, url, or method' });
-    }
+            if (!workspaceId || workspaceId.length < 5 || !url || !method) {
+                return res.status(400).json({ error: 'Missing or invalid workspaceId, url, or method' });
+            }
 
-    // 1. Build config
-    let config = { method, url, headers: headers ?? {}, body, params };
+            const member = await prisma.workspaceMember.findUnique({
+                where: {
+                    workspaceId_userId: {
+                        workspaceId,
+                        userId
+                    }
+                }
+            }).catch(err => {
+                throw new Error(`Workspace member lookup failed: ${err.message}`);
+            });
+
+            // Only EDITOR or OWNER can execute.
+            if (!member || (member.role !== 'EDITOR' && member.role !== 'OWNER')) {
+                return res.status(403).json({ error: 'You do not have permission to execute requests in this workspace' });
+            }
+
+            // 2. Build Config directly from Body
+            let config = { method, url, headers, body, params };
 
     // 2. Variable substitution
     if (environmentId) {
@@ -178,16 +214,21 @@ export const requestController = {
       executedBy: userId,
     });
 
-    res.status(200).json({
-      ...result,
-      historyId: executionLog._id
-    });
-  }),
+            res.status(200).json({
+                ...result,
+                time: result.timings.total,
+                historyId: executionLog._id
+            });
 
-  /* ===========================
+        } catch (error) {
+            console.error('Ad-Hoc Execution Error:', error);
+            res.status(500).json({ error: error.message || 'Failed to execute request' });
+        }
+    }),
+
+    /* ===========================
      HISTORY
-  ============================ */
-
+    ============================ */
   getRequestHistory: catchAsync(async (req, res) => {
     const { requestId } = req.params;
     const { environmentId } = req.body;
