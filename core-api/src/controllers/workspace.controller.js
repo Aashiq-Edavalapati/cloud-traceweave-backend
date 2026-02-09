@@ -173,7 +173,7 @@ export const updateMemberRole = async (req, res, next) => {
  * Get Execution History for the entire Workspace
  * Pagination: ?page=1&limit=20
  */
-export const getWorkspaceHistory = catchAsync(async (req, res) => {
+export const getWorkspaceHistory = async (req, res) => {
   try {
     const { workspaceId } = req.params;
     const page = parseInt(req.query.page) || 1;
@@ -204,4 +204,4 @@ export const getWorkspaceHistory = catchAsync(async (req, res) => {
     console.error('Error fetching workspace history:', error);
     res.status(500).json({ error: 'Failed to fetch workspace history' });
   }
-});
+};
