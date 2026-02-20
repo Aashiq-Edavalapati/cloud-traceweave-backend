@@ -1,114 +1,121 @@
 import prisma from '../config/prisma.js';
-import WorkflowLog from '../models/workflow-log.model.js';
 import ExecutionLog from '../models/execution.model.js';
 import { executeHttpRequest } from './http-runner.service.js';
-// import { substituteVariables } from '../utils/template.utils.js';
 
 export const executeWorkflow = async (workflowId, userId, runtimeVariables = {}) => {
-  // 1. Fetch Workflow Definition
-  console.log("Entered executeWorkflow with:", { workflowId, userId, runtimeVariables });
-  const workflow = await prisma.workflow.findUnique({
-    where: { id: workflowId },
+  // 1. Create Workflow Execution Record (PENDING)
+  const execution = await prisma.workflowExecution.create({
+      data: {
+          workflowId,
+          triggeredById: userId,
+          status: 'RUNNING',
+          startedAt: new Date()
+      }
   });
 
-  if (!workflow) throw new Error('Workflow not found');
-
-  const steps = Array.isArray(workflow.steps) ? workflow.steps : [];
-  const logSteps = [];
-  let isSuccess = true;
-  const startTime = Date.now();
-
-  // 2. Iterate Steps
-  for (const [index, step] of steps.entries()) {
-    const { requestId, stopOnFailure } = step;
-
-    // A. Fetch the Request Definition
-    const requestDef = await prisma.requestDefinition.findUnique({
-      where: { id: requestId, deletedAt: null },
-      include: { collection: true } // Need this for workspaceId context if needed
-    });
-
-    // console.log('Executing Step:', index, 'Request ID:', requestId);
-    console.log('Request Definition:', requestDef);
-
-    if (!requestDef) {
-      logSteps.push({
-        stepId: index,
-        requestId,
-        requestName: 'Unknown (Deleted)',
-        status: 404,
-        success: false,
-        executionTime: 0
+  try {
+      // 2. Fetch Workflow Definition with Steps and Requests
+      const workflow = await prisma.workflow.findUnique({
+        where: { id: workflowId },
+        include: {
+            steps: {
+                orderBy: { order: 'asc' },
+                include: { request: true }
+            }
+        }
       });
-      if (stopOnFailure) { isSuccess = false; break; }
-      continue;
-    }
 
-    // B. Prepare Config (Merge with any future context variables)
-    // For Sprint 1, we just use the static definition
-    let config = {
-      method: requestDef.method,
-      url: requestDef.url,
-      headers: requestDef.headers,
-      body: requestDef.body,
-      params: requestDef.params
-    };
+      if (!workflow) throw new Error('Workflow not found');
 
-    // C. Execute (Reuse our HTTP Runner)
-    const result = await executeHttpRequest(config);
+      const steps = workflow.steps || [];
+      let isSuccess = true;
 
-    // D. Log Individual Request (The Detailed Log)
-    const executionLog = await ExecutionLog.create({
-      requestId: requestDef.id,
-      collectionId: requestDef.collectionId,
-      workspaceId: workflow.workspaceId,
-      method: config.method,
-      url: config.url,
-      status: result.status,
-      statusText: result.statusText,
-      responseHeaders: result.headers,
-      responseBody: result.data,
-      responseSize: result.size,
-      timings: result.timings,
-      executedBy: userId,
-      // Metadata to link back to parent workflow
-      meta: { workflowLogId: null }
-    });
+      // 3. Iterate Steps
+      for (const step of steps) {
+        const { request, stopOnFailure } = step;
 
-    // E. Add to Summary
-    logSteps.push({
-      stepId: index,
-      requestId: requestDef.id,
-      requestName: requestDef.name,
-      status: result.status,
-      executionTime: result.timings.total,
-      timings: result.timings, // Added to allow frontend to check for 'Live' data
-      success: result.success || (result.status >= 200 && result.status < 300),
-      historyId: executionLog._id.toString()
-    });
+        if (!request) {
+            // Log missing request error?
+            console.error(`Step ${step.id} has no request definition`);
+            if (stopOnFailure) { isSuccess = false; break; }
+            continue;
+        }
 
-    // F. Handle Stop on Failure
-    if (stopOnFailure && !(result.status >= 200 && result.status < 300)) {
-      isSuccess = false;
-      break;
-    }
+        // Prepare Config
+        const requestConfig = request.config || {};
+        let config = {
+          method: requestConfig.method || request.method || 'GET', 
+          url: requestConfig.url || request.url || '',
+          headers: requestConfig.headers || request.headers || {},
+          body: requestConfig.body || request.body || null,
+          params: requestConfig.params || request.params || {}
+        };
 
-    // Optional: Implement Delay here if step.delay exists
+        // Execute Request
+        let result;
+        try {
+            result = await executeHttpRequest(config);
+        } catch (err) {
+            result = {
+                status: 0,
+                statusText: 'Execution Error',
+                headers: {},
+                data: err.message,
+                size: 0,
+                timings: { total: 0 }
+            };
+        }
+
+        // Log Individual Request Results
+        // Note: ExecutionLog is Mongoose model
+        await ExecutionLog.create({
+          requestId: request.id,
+          collectionId: request.collectionId,
+          workspaceId: workflow.workspaceId,
+          method: config.method,
+          url: config.url,
+          status: result.status,
+          statusText: result.statusText,
+          responseHeaders: result.headers,
+          responseBody: result.data, 
+          responseSize: result.size,
+          timings: result.timings,
+          executedBy: userId,
+          // Link to parent execution
+          workflowExecutionId: execution.id,
+          stepId: step.id,
+          stepOrder: step.order
+        });
+
+        // Handle Stop on Failure
+        if (stopOnFailure && !(result.status >= 200 && result.status < 300)) {
+          isSuccess = false;
+          break;
+        }
+      }
+
+      // 4. Update Workflow Execution Status
+      const finalStatus = isSuccess ? 'SUCCESS' : 'FAILED';
+      await prisma.workflowExecution.update({
+          where: { id: execution.id },
+          data: {
+              status: finalStatus,
+              completedAt: new Date()
+          }
+      });
+
+      return { executionId: execution.id, status: finalStatus };
+
+  } catch (error) {
+      console.error("Workflow Execution Failed:", error);
+      // Mark as failed if execution logic crashes
+      await prisma.workflowExecution.update({
+          where: { id: execution.id },
+          data: {
+              status: 'FAILED',
+              completedAt: new Date()
+          }
+      });
+      throw error;
   }
-
-  const endTime = Date.now();
-
-  // 3. Create Master Workflow Log
-  const workflowLog = await WorkflowLog.create({
-    workflowId: workflow.id,
-    workspaceId: workflow.workspaceId,
-    executedBy: userId,
-    status: isSuccess ? 'COMPLETED' : 'FAILED',
-    startTime: new Date(startTime),
-    endTime: new Date(endTime),
-    totalDuration: endTime - startTime,
-    steps: logSteps
-  });
-
-  return workflowLog;
 };
