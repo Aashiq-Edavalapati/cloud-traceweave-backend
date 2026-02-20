@@ -53,117 +53,79 @@ export const requestController = {
   ============================ */
 
     sendRequest: catchAsync(async (req, res) => {
-        try {
-            const { requestId } = req.params;
-            const userId = req.user.id;
+      try {
+        const { requestId } = req.params;
+        const userId = req.user.id;
 
-            // More permissive ID check to avoid blocking valid IDs while still preventing junk
-            if (!requestId || requestId.length < 5) {
-                return res.status(400).json({ error: 'Invalid Request ID format' });
-            }
-
-            // If the user sends a POST without a body (or Content-Type issues), req.body is undefined.
-            const { overrides = {}, environmentId } = req.body || {};
-
-            // 2. Fetch Request Definition
-            const requestDef = await prisma.requestDefinition.findUnique({
-                where: { id: requestId },
-                include: { collection: true },
-            }); // removed catch block to let global handler catch generic errors, only catch specific if needed.
-
-    if (!requestDef) {
-      return res.status(404).json({ error: 'Request definition not found' });
-    }
-
-    const workspaceId = requestDef.collection.workspaceId;
-
-            // 3. Merge: Database Config + Overrides
-            // Ensure we use the config object, but also check top-level fields for legacy/migration support
-            let dbConfig = requestDef.config || {};
-            // If dbConfig is empty, try to populate from old schema fields if they exist on the object (though Prisma types might hide them if not in schema)
-            // Since we updated schema, 'method', 'url' etc are GONE from top level RequestDefinition model.
-            // So dbConfig MUST be populated. If it's empty, we have a migration data issue.
-            
-            // Allow overrides
-            const overrideConfig = overrides.config || {};
-            
-            // Fix: Merge headers instead of replacing entire object
-            const mergedHeaders = {
-                ...(dbConfig.headers || {}),
-                ...(overrideConfig.headers || overrides.headers || {})
-            };
-            
-            // Fix: Merge params
-            const mergedParams = {
-                ...(dbConfig.params || {}),
-                ...(overrideConfig.params || overrides.params || {})
-            };
-
-            let config = {
-                method: overrideConfig.method ?? overrides.method ?? dbConfig.method ?? 'GET',
-                url: overrideConfig.url ?? overrides.url ?? dbConfig.url ?? '',
-                headers: mergedHeaders,
-                body: overrideConfig.body ?? overrides.body ?? dbConfig.body,
-                params: mergedParams,
-            };
-
-            // 4. Variable Substitution
-            if (environmentId) {
-                const variables = await environmentService.getVariablesForExecution(
-                    environmentId,
-                    userId,
-                    workspaceId
-                );
-                config = substituteVariables(config, variables);
-            }
-
-    // 4. LOAD COOKIE JAR
-    const domain = new URL(config.url).hostname;
-    const jar = await loadCookieJar(userId, workspaceId, domain);
-
-    // 5. EXECUTE
-    let result;
-    if (config.body?.type === 'graphql') {
-        result = await executeGraphQLRequest(config, jar);
-    } else {
-        result = await executeHttpRequest(config, jar);
-    }
-
-    // 6. SAVE COOKIES (if any)
-    if (result.headers?.['set-cookie']) {
-      await persistCookieJar(jar, userId, workspaceId, config.url);
-    }
-
-    // 7. LOG HISTORY
-    const executionLog = await ExecutionLog.create({
-      requestId: requestDef.id,
-      collectionId: requestDef.collectionId,
-      workspaceId,
-      environmentId: environmentId || null,
-      method: config.method,
-      url: config.url,
-      status: result.status,
-      statusText: result.statusText,
-      responseHeaders: result.headers,
-      responseBody: result.data,
-      responseSize: result.size,
-      timings: result.timings,
-      executedBy: userId,
-    });
-
-            res.status(200).json({
-                ...result,
-                time: result.timings.total,
-                historyId: executionLog._id
-            });
-
-        } catch (error) {
-            console.error('Execution Error:', error);
-            const isPrismaError = error.message?.toLowerCase().includes('prisma');
-            res.status(500).json({
-                error: isPrismaError ? 'Internal database error during execution' : (error.message || 'Failed to execute request')
-            });
+        if (!requestId || requestId.length < 5) {
+          return res.status(400).json({ error: 'Invalid Request ID format' });
         }
+
+        const { overrides = {}, environmentId } = req.body || {};
+
+        const requestDef = await prisma.requestDefinition.findUnique({
+          where: { id: requestId },
+          include: { collection: true },
+        });
+
+        if (!requestDef) return res.status(404).json({ error: 'Request not found' });
+
+        const workspaceId = requestDef.collection.workspaceId;
+        const dbConfig = requestDef.config || {};
+        const overrideConfig = overrides.config || {};
+
+        // Merge Configs safely
+        let config = {
+          method: overrideConfig.method ?? dbConfig.method ?? 'GET',
+          url: overrideConfig.url ?? dbConfig.url ?? '',
+          headers: { ...(dbConfig.headers || {}), ...(overrideConfig.headers || {}) },
+          params: { ...(dbConfig.params || {}), ...(overrideConfig.params || {}) },
+          body: overrideConfig.body ?? dbConfig.body,
+        };
+
+        if (environmentId) {
+          const variables = await environmentService.getVariablesForExecution(
+            environmentId, userId, workspaceId
+          );
+          config = substituteVariables(config, variables);
+        }
+
+        const domain = new URL(config.url).hostname;
+        const jar = await loadCookieJar(userId, workspaceId, domain);
+
+        let result;
+        // FIX: Use the explicit protocol from the database to route the request!
+        if (requestDef.protocol === 'graphql') {
+          result = await executeGraphQLRequest({ ...config, url: config.url }, jar);
+        } else {
+          result = await executeHttpRequest(config, jar);
+        }
+
+        if (result.headers?.['set-cookie']) {
+          await persistCookieJar(jar, userId, workspaceId, config.url);
+        }
+
+        const executionLog = await ExecutionLog.create({
+          requestId: requestDef.id,
+          collectionId: requestDef.collectionId,
+          workspaceId,
+          environmentId: environmentId || null,
+          method: config.method,
+          url: config.url,
+          status: result.status,
+          statusText: result.statusText,
+          responseHeaders: result.headers,
+          responseBody: result.data,
+          responseSize: result.size,
+          timings: result.timings,
+          executedBy: userId,
+        });
+
+        res.status(200).json({ ...result, time: result.timings.total, historyId: executionLog._id });
+      } catch (error) {
+        console.error('Execution Error:', error);
+        res.status(500).json({ error: error.message || 'Failed to execute request' });
+      }
     }),
 
     /**
@@ -171,96 +133,67 @@ export const requestController = {
    * Route: POST /execute (No ID in URL)
    */
     executeAdHocRequest: catchAsync(async (req, res) => {
-        try {
-            const userId = req.user.id;
-            // 1. We require workspaceId to enforce RBAC (Users can't just use our server as a free proxy)
-            const { workspaceId, method, url, headers, body, params, environmentId } = req.body;
+    try {
+      const userId = req.user.id;
+      
+      // FIX THE DESTRUCTURING: Extract 'config' and 'protocol' sent by executionSlice
+      const { workspaceId, protocol = 'http', config = {}, environmentId } = req.body;
+      const { method = 'GET', url, headers = {}, body, params = {} } = config;
 
-            if (!workspaceId || workspaceId.length < 5 || !url || !method) {
-                return res.status(400).json({ error: 'Missing or invalid workspaceId, url, or method' });
-            }
+      if (!workspaceId || workspaceId.length < 5 || !url) {
+        return res.status(400).json({ error: 'Missing workspaceId or url' });
+      }
 
-            const member = await prisma.workspaceMember.findUnique({
-                where: {
-                    workspaceId_userId: {
-                        workspaceId,
-                        userId
-                    }
-                }
-            }).catch(err => {
-                throw new Error(`Workspace member lookup failed: ${err.message}`);
-            });
+      const member = await prisma.workspaceMember.findUnique({
+        where: { workspaceId_userId: { workspaceId, userId } }
+      });
 
-            // Only EDITOR or OWNER can execute.
-            if (!member || (member.role !== 'EDITOR' && member.role !== 'OWNER')) {
-                return res.status(403).json({ error: 'You do not have permission to execute requests in this workspace' });
-            }
+      if (!member || (member.role !== 'EDITOR' && member.role !== 'OWNER')) {
+        return res.status(403).json({ error: 'Permission denied' });
+      }
 
-            // Build Config directly from Body
-            let config = { method, url, headers, body, params };
+      let execConfig = { method, url, headers, body, params };
 
-            // 2. Variable substitution
-            if (environmentId) {
-              const variables = await environmentService.getVariablesForExecution(
-                environmentId,
-                userId,
-                workspaceId
-              );
-              config = substituteVariables(config, variables);
-            }
+      if (environmentId) {
+        const variables = await environmentService.getVariablesForExecution(
+          environmentId, userId, workspaceId
+        );
+        execConfig = substituteVariables(execConfig, variables);
+      }
 
-            // 3. LOAD COOKIE JAR
-            const domain = new URL(config.url).hostname;
-            let jar = null;
-            try {
-                const urlObj = new URL(config.url.includes('://') ? config.url : `http://${config.url}`);
-                jar = await loadCookieJar(userId, workspaceId, urlObj.hostname);
-            } catch (e) {
-                console.warn("Invalid URL for Cookie Jar:", config.url);
-            }
+      let jar = null;
+      try {
+        const urlObj = new URL(execConfig.url.includes('://') ? execConfig.url : `http://${execConfig.url}`);
+        jar = await loadCookieJar(userId, workspaceId, urlObj.hostname);
+      } catch (e) { console.warn("Invalid URL for Cookie Jar"); }
 
-            // 4. EXECUTE
-            let result;
-            
-            if (config.body?.type === 'graphql') {
-                    result = await executeGraphQLRequest(config, jar);
-                } else {
-                    result = await executeHttpRequest(config, jar);
-                }
+      let result;
+      // FIX: Use protocol to switch runners
+      if (protocol === 'graphql') {
+        result = await executeGraphQLRequest(execConfig, jar);
+      } else {
+        result = await executeHttpRequest(execConfig, jar);
+      }
 
-            // 5. SAVE COOKIES
-            if (result.headers?.['set-cookie']) {
-              await persistCookieJar(jar, userId, workspaceId, config.url);
-            }
+      if (result.headers?.['set-cookie']) {
+        await persistCookieJar(jar, userId, workspaceId, execConfig.url);
+      }
 
-            // 6. LOG HISTORY (Ad-hoc)
-            const executionLog = await ExecutionLog.create({
-              requestId: null,
-              collectionId: null,
-              workspaceId,
-              environmentId: environmentId || null,
-              method: config.method,
-              url: config.url,
-              status: result.status,
-              statusText: result.statusText,
-              responseHeaders: result.headers,
-              responseBody: result.data,
-              responseSize: result.size,
-              timings: result.timings,
-              executedBy: userId,
-            });
+      const executionLog = await ExecutionLog.create({
+        requestId: null, collectionId: null, workspaceId,
+        environmentId: environmentId || null,
+        method: execConfig.method, url: execConfig.url,
+        status: result.status, statusText: result.statusText,
+        responseHeaders: result.headers, responseBody: result.data,
+        responseSize: result.size, timings: result.timings, executedBy: userId,
+      });
 
-            res.status(200).json({
-                ...result,
-                time: result.timings.total,
-                historyId: executionLog._id
-            });
-
-        } catch (error) {
-            console.error('Ad-Hoc Execution Error:', error);
-            res.status(500).json({ error: error.message || 'Failed to execute request' });
-        }
-    }),
+      res.status(200).json({ ...result, time: result.timings.total, historyId: executionLog._id });
+    } catch (error) {
+      console.error('Ad-Hoc Error:', error);
+      res.status(500).json({ error: error.message || 'Failed to execute request' });
+    }
+  }),
 
     /* ===========================
      HISTORY

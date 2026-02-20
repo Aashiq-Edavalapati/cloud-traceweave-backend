@@ -1,6 +1,7 @@
 import { executeHttpRequest } from './http-runner.service.js';
 
 export const executeGraphQLRequest = async (requestConfig, cookieJar) => {
+    // console.log("Preparing to execute GraphQL request with config:", requestConfig);
     const { url, headers = {}, body } = requestConfig;
     const { query, variables } = body.graphql || {};
 
@@ -44,6 +45,6 @@ export const executeGraphQLRequest = async (requestConfig, cookieJar) => {
             raw: payload
         }
     };
-
+    // console.log("Executing GraphQL Request with config:", httpConfig);
     return await executeHttpRequest(httpConfig, cookieJar);
 };
