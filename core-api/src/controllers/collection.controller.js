@@ -22,13 +22,19 @@ export const createCollection = catchAsync(async (req, res) => {
 });
 
 export const getCollectionsByWorkspace = catchAsync(async (req, res) => {
-  const { workspaceId } = req.params;
-  const userId = req.user.id;
-
-  const collections =
-    await CollectionService.getCollectionsByWorkspace(workspaceId, userId);
-
-  res.status(httpStatus.OK).send(collections);
+  try {
+    console.log('Getting collections for workspace:', req.params.workspaceId);
+    const { workspaceId } = req.params;
+    const userId = req.user.id;
+  
+    console.log('User ID:', userId);
+    const collections =
+      await CollectionService.getCollectionsByWorkspace(workspaceId, userId);
+    console.log('Collections retrieved:', collections.length);
+    res.status(httpStatus.OK).send(collections);
+  } catch (error) {
+    console.error('Error fetching collections:', error);
+  }
 });
 
 export const deleteCollection = catchAsync(async (req, res) => {

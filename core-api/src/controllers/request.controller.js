@@ -2,6 +2,7 @@ import httpStatus from 'http-status';
 import { requestDefinitionService } from '../services/requestDefinition.service.js';
 import catchAsync from '../utils/catchAsync.js';
 import { executeHttpRequest } from '../services/http-runner.service.js';
+import { executeGraphQLRequest } from '../services/graphql-runner.service.js';
 import ExecutionLog from '../models/execution.model.js';
 import prisma from '../config/prisma.js';
 import { environmentService } from '../services/environment.service.js';
@@ -68,10 +69,7 @@ export const requestController = {
             const requestDef = await prisma.requestDefinition.findUnique({
                 where: { id: requestId },
                 include: { collection: true },
-            }).catch(err => {
-                // If Prisma specifically fails due to ID format, catch it here
-                throw new Error(`Invalid ID lookup: ${err.message}`);
-            });
+            }); // removed catch block to let global handler catch generic errors, only catch specific if needed.
 
     if (!requestDef) {
       return res.status(404).json({ error: 'Request definition not found' });
@@ -80,12 +78,33 @@ export const requestController = {
     const workspaceId = requestDef.collection.workspaceId;
 
             // 3. Merge: Database Config + Overrides
+            // Ensure we use the config object, but also check top-level fields for legacy/migration support
+            let dbConfig = requestDef.config || {};
+            // If dbConfig is empty, try to populate from old schema fields if they exist on the object (though Prisma types might hide them if not in schema)
+            // Since we updated schema, 'method', 'url' etc are GONE from top level RequestDefinition model.
+            // So dbConfig MUST be populated. If it's empty, we have a migration data issue.
+            
+            // Allow overrides
+            const overrideConfig = overrides.config || {};
+            
+            // Fix: Merge headers instead of replacing entire object
+            const mergedHeaders = {
+                ...(dbConfig.headers || {}),
+                ...(overrideConfig.headers || overrides.headers || {})
+            };
+            
+            // Fix: Merge params
+            const mergedParams = {
+                ...(dbConfig.params || {}),
+                ...(overrideConfig.params || overrides.params || {})
+            };
+
             let config = {
-                method: overrides.method ?? requestDef.method,
-                url: overrides.url ?? requestDef.url,
-                headers: overrides.headers ?? requestDef.headers ?? {},
-                body: overrides.body ?? requestDef.body,
-                params: overrides.params ?? requestDef.params ?? {},
+                method: overrideConfig.method ?? overrides.method ?? dbConfig.method ?? 'GET',
+                url: overrideConfig.url ?? overrides.url ?? dbConfig.url ?? '',
+                headers: mergedHeaders,
+                body: overrideConfig.body ?? overrides.body ?? dbConfig.body,
+                params: mergedParams,
             };
 
             // 4. Variable Substitution
@@ -103,7 +122,12 @@ export const requestController = {
     const jar = await loadCookieJar(userId, workspaceId, domain);
 
     // 5. EXECUTE
-    const result = await executeHttpRequest(config, jar);
+    let result;
+    if (config.body?.type === 'graphql') {
+        result = await executeGraphQLRequest(config, jar);
+    } else {
+        result = await executeHttpRequest(config, jar);
+    }
 
     // 6. SAVE COOKIES (if any)
     if (result.headers?.['set-cookie']) {
@@ -196,7 +220,13 @@ export const requestController = {
             }
 
             // 4. EXECUTE
-            const result = await executeHttpRequest(config, jar);
+            let result;
+            
+            if (config.body?.type === 'graphql') {
+                    result = await executeGraphQLRequest(config, jar);
+                } else {
+                    result = await executeHttpRequest(config, jar);
+                }
 
             // 5. SAVE COOKIES
             if (result.headers?.['set-cookie']) {

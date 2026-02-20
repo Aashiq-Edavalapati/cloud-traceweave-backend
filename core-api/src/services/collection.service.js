@@ -38,34 +38,42 @@ export class CollectionService {
   }
 
   static async getCollectionsByWorkspace(workspaceId) {
-    if (!workspaceId) {
+    try {
+      if (!workspaceId) {
+        throw new ApiError(
+          httpStatus.BAD_REQUEST,
+          "workspaceId is required"
+        );
+      }
+
+      return prisma.collection.findMany({
+        where: {
+          workspaceId,
+          deletedAt: null,
+          parentId: null
+        },
+        include: {
+          children: {
+            where: { deletedAt: null },
+            include: {
+              children: true,
+              requests: {
+                where: { deletedAt: null }
+              }
+            }
+          },
+          requests: {
+            where: { deletedAt: null }
+          }
+        }
+      });
+    } catch (error) {
+      console.error("Error fetching collections:", error);
       throw new ApiError(
-        httpStatus.BAD_REQUEST,
-        "workspaceId is required"
+        httpStatus.INTERNAL_SERVER_ERROR,
+        "An error occurred while fetching collections"
       );
     }
-
-    return prisma.collection.findMany({
-      where: {
-        workspaceId,
-        deletedAt: null,
-        parentId: null
-      },
-      include: {
-        children: {
-          where: { deletedAt: null },
-          include: {
-            children: true,
-            requests: {
-              where: { deletedAt: null }
-            }
-          }
-        },
-        requests: {
-          where: { deletedAt: null }
-        }
-      }
-    });
   }
 
   static async softDeleteCollection(collectionId) {

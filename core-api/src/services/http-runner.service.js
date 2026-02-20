@@ -85,15 +85,30 @@ export const executeHttpRequest = (requestConfig, cookieJar = null) => {
         method = 'GET',
         url,
         headers = {},
-        body // This is the Definition Object from FE
+        body,
+        params = {}
       } = requestConfig;
 
       // 1. VALIDATE URL
       let parsedUrl;
       try {
-        parsedUrl = new URL(url.includes('://') ? url : `http://${url}`);
-      } catch {
-        return resolve(createErrorResponse('Invalid URL format', 0));
+        const urlStr = url.includes('://') ? url : `http://${url}`;
+        parsedUrl = new URL(urlStr);
+        
+        // Append Params to URL Query
+        if (requestConfig.params && typeof requestConfig.params === 'object') {
+            Object.keys(requestConfig.params).forEach(key => {
+                const param = requestConfig.params[key];
+                // Handle simple key-value and object structure { key, value, active }
+                // Only skip if explicitly deactivated
+                if (param && (typeof param !== 'object' || param.active !== false)) {
+                   const val = (typeof param === 'object' && param.value !== undefined) ? param.value : param;
+                   parsedUrl.searchParams.append(key, String(val));
+                }
+            });
+        }
+      } catch (err) {
+        return resolve(createErrorResponse(`Invalid URL: ${err.message}`, 0));
       }
 
       // 2. PROCESS HEADERS (Defaults + Overrides)

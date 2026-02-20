@@ -1,15 +1,29 @@
 import prisma from '../config/prisma.js';
 import { executeWorkflow } from '../services/workflow-runner.service.js';
 import catchAsync from '../utils/catchAsync.js';
-import WorkflowLog from '../models/workflow-log.model.js';
 
 export const workflowController = {
   // Create Workflow
   createWorkflow: catchAsync(async (req, res) => {
-    const { workspaceId, name, steps, description } = req.body;
-    // Basic validation could go here
+    const { workspaceId, name, steps, description } = req.body; // steps is array of { requestId, order, stopOnFailure }
+    
+    // Create workflow with related steps
     const workflow = await prisma.workflow.create({
-      data: { workspaceId, name, steps, description }
+      data: { 
+        workspaceId, 
+        name, 
+        description,
+        steps: {
+            create: steps.map((step, index) => ({
+                requestId: step.requestId,
+                order: step.order ?? index,
+                stopOnFailure: step.stopOnFailure ?? true
+            }))
+        }
+      },
+      include: {
+          steps: true
+      }
     });
     res.status(201).json(workflow);
   }),
@@ -18,7 +32,8 @@ export const workflowController = {
   getWorkflows: catchAsync(async (req, res) => {
     const { workspaceId } = req.params;
     const workflows = await prisma.workflow.findMany({
-      where: { workspaceId, deletedAt: null }
+      where: { workspaceId, deletedAt: null },
+      include: { steps: true }
     });
     res.json(workflows);
   }),
@@ -27,7 +42,8 @@ export const workflowController = {
   getWorkflowById: catchAsync(async (req, res) => {
     const { workflowId } = req.params;
     const workflow = await prisma.workflow.findUnique({
-      where: { id: workflowId }
+      where: { id: workflowId },
+      include: { steps: { include: { request: true }, orderBy: { order: 'asc' } } }
     });
     if (!workflow) return res.status(404).json({ error: 'Workflow not found' });
     res.json(workflow);
@@ -36,16 +52,32 @@ export const workflowController = {
   // Update
   updateWorkflow: catchAsync(async (req, res) => {
     const { workflowId } = req.params;
+    const { steps, ...otherData } = req.body;
+    
+    // Build update data
+    const updateData = { ...otherData };
+    
+    if (steps) {
+        updateData.steps = {
+            deleteMany: {}, // Remove existing steps
+            create: steps.map((step, index) => ({
+                requestId: step.requestId,
+                order: step.order ?? index,
+                stopOnFailure: step.stopOnFailure ?? true
+            }))
+        };
+    }
+
     const workflow = await prisma.workflow.update({
       where: { id: workflowId },
-      data: req.body
+      data: updateData,
+      include: { steps: true }
     });
     res.json(workflow);
   }),
 
   // RUN WORKFLOW
   runWorkflow: catchAsync(async (req, res) => {
-    console.log("Entered runWorkflow controller", req);
     const { workflowId } = req.params;
     const userId = req.user.id;
     
@@ -60,7 +92,13 @@ export const workflowController = {
   // Get Workflow History
   getWorkflowHistory: catchAsync(async (req, res) => {
     const { workflowId } = req.params;
-    const logs = await WorkflowLog.find({ workflowId }).sort({ createdAt: -1 }).limit(20);
-    res.json(logs);
+    // Use Postgres WorkflowExecution instead of Mongo WorkflowLog
+    const executions = await prisma.workflowExecution.findMany({
+        where: { workflowId },
+        orderBy: { startedAt: 'desc' },
+        take: 20,
+        include: { triggeredBy: true }
+    });
+    res.json(executions);
   })
 };

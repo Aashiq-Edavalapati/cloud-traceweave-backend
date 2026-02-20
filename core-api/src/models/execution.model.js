@@ -28,6 +28,11 @@ const executionSchema = new mongoose.Schema({
     download: Number,  // Content Download
     total: Number      // Total Duration
   },
+  
+  // Workflow Context
+  workflowExecutionId: { type: String, index: true }, // Postgres UUID of the parent execution
+  stepId: String, // ID of the step in the workflow definition
+  stepOrder: Number,
 
   executedBy: String, // User UUID
   createdAt: { type: Date, default: Date.now }
