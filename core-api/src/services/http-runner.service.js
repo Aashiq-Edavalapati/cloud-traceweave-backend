@@ -3,6 +3,7 @@ import https from 'https';
 import { URL } from 'url';
 import { v4 as uuidv4 } from 'uuid';
 import zlib from 'zlib';
+import FormData from 'form-data';
 
 /**
  * Helper: Parse Set-Cookie header into a simple object for frontend display
@@ -15,7 +16,6 @@ const parseResponseCookies = (headers) => {
   const list = Array.isArray(raw) ? raw : [raw];
 
   list.forEach(str => {
-    // Simple parse: "key=value; Path=/..." -> gets "key": "value"
     const parts = str.split(';');
     const [key, ...valParts] = parts[0].split('=');
     if (key) {
@@ -26,50 +26,75 @@ const parseResponseCookies = (headers) => {
 };
 
 /**
- * Helper: Process the Body Definition into a Sendable String/Buffer
+ * Helper: Process the Body Definition into a Sendable String/Buffer/Stream
  */
 const processBody = (bodyDef, headers) => {
   if (!bodyDef || typeof bodyDef !== 'object') return bodyDef;
 
-  // 1. RAW (JSON, Text, XML, HTML)
+  // 1. RAW
   if (bodyDef.type === 'raw') {
     return bodyDef.raw || '';
   }
 
-  // 2. X-WWW-FORM-URLENCODED
+  // 2. URL ENCODED
   if (bodyDef.type === 'urlencoded') {
     if (Array.isArray(bodyDef.urlencoded)) {
       const params = new URLSearchParams();
       bodyDef.urlencoded.forEach(item => {
+        // If it's the raw array from DB, check active. If it's the processed array from executionSlice, it won't have active.
         if (item.key && item.active !== false) {
           params.append(item.key, item.value);
         }
       });
-      // Ensure header is set if not already
-      // (The frontend usually handles this, but safety first)
       return params.toString();
     }
   }
 
-  // 3. FORM-DATA (Simple implementation for Sprint 1)
-  // Note: For full binary support, we'd need the 'form-data' npm package.
-  // This is a placeholder that warns if used without proper boundary handling.
+  // 3. FORM-DATA
   if (bodyDef.type === 'formdata') {
-     console.warn("Multipart/form-data logic requires 'form-data' package. Sending empty for now.");
-     return ''; 
+      const form = new FormData();
+      
+      (bodyDef.formdata || []).forEach(item => {
+          if (!item.key) return; 
+
+          // STRICT CHECK: Ensure it is a living, breathing Node.js Buffer
+          if (item.isFile && item.value && Buffer.isBuffer(item.value.buffer)) {
+              form.append(item.key, item.value.buffer, {
+                  filename: item.value.name || 'upload.bin',
+                  contentType: item.value.type || 'application/octet-stream'
+              });
+          } else {
+              // Neutralize any dead objects (like corrupted buffers) into strings
+              let safeValue = item.value;
+              if (typeof safeValue === 'object' && safeValue !== null) {
+                  safeValue = ''; 
+              }
+              form.append(item.key, String(safeValue || ''));
+          }
+      });
+
+      Object.assign(headers, form.getHeaders());
+      return form; 
   }
 
-  // 4. NONE
+  // 4. BINARY
+  if (bodyDef.type === 'binary') {
+      if (bodyDef.binaryFile && bodyDef.binaryFile.buffer) {
+          return bodyDef.binaryFile.buffer; 
+      }
+      return null;
+  }
+
+  // 5. NONE
   if (bodyDef.type === 'none') return undefined;
 
-  // Fallback: If it's just a plain object (legacy), stringify it
+  // Fallback for random objects
   return JSON.stringify(bodyDef);
 };
 
 
 export const executeHttpRequest = (requestConfig, cookieJar = null) => {
   return new Promise(async (resolve) => {
-    // TIMINGS SETUP
     const timings = {
       start: Date.now(),
       dnsLookup: 0,
@@ -95,12 +120,9 @@ export const executeHttpRequest = (requestConfig, cookieJar = null) => {
         const urlStr = url.includes('://') ? url : `http://${url}`;
         parsedUrl = new URL(urlStr);
         
-        // Append Params to URL Query
         if (requestConfig.params && typeof requestConfig.params === 'object') {
             Object.keys(requestConfig.params).forEach(key => {
                 const param = requestConfig.params[key];
-                // Handle simple key-value and object structure { key, value, active }
-                // Only skip if explicitly deactivated
                 if (param && (typeof param !== 'object' || param.active !== false)) {
                    const val = (typeof param === 'object' && param.value !== undefined) ? param.value : param;
                    parsedUrl.searchParams.append(key, String(val));
@@ -111,7 +133,7 @@ export const executeHttpRequest = (requestConfig, cookieJar = null) => {
         return resolve(createErrorResponse(`Invalid URL: ${err.message}`, 0));
       }
 
-      // 2. PROCESS HEADERS (Defaults + Overrides)
+      // 2. PROCESS HEADERS
       const defaultHeaders = {
           'User-Agent': 'TraceWeaveRuntime/1.0',
           'Accept': '*/*',
@@ -121,19 +143,16 @@ export const executeHttpRequest = (requestConfig, cookieJar = null) => {
           'Postman-Token': uuidv4()
       };
       
-      // Merge defaults (User headers take precedence)
       const safeHeaders = { ...defaultHeaders };
-      // Case-insensitive merge logic
       Object.keys(headers).forEach(key => {
           safeHeaders[key] = headers[key];
       });
 
-      // 3. PROCESS BODY
+      // 3. PROCESS BODY (This mutates safeHeaders if it's form-data)
       const requestPayload = processBody(body, safeHeaders);
 
-      // 4. CALCULATE CONTENT-LENGTH
-      // Critical for some servers to accept the request
-      if (requestPayload) {
+      // 4. CALCULATE CONTENT-LENGTH (Only if it's NOT a stream)
+      if (requestPayload && !(requestPayload instanceof FormData)) {
           safeHeaders['Content-Length'] = Buffer.byteLength(requestPayload);
       }
 
@@ -157,7 +176,7 @@ export const executeHttpRequest = (requestConfig, cookieJar = null) => {
         port: parsedUrl.port || (isHttps ? 443 : 80),
         path: parsedUrl.pathname + parsedUrl.search,
         headers: safeHeaders,
-        timeout: 10000, // 10s Timeout
+        timeout: 10000, 
       };
 
       // --- EXECUTION ---
@@ -167,7 +186,6 @@ export const executeHttpRequest = (requestConfig, cookieJar = null) => {
       const req = lib.request(options);
 
       // --- EVENTS ---
-      
       req.on('socket', (socket) => {
         socket.on('lookup', () => {
            dnsEnd = Date.now();
@@ -204,7 +222,6 @@ export const executeHttpRequest = (requestConfig, cookieJar = null) => {
           timings.total = end - timings.start;
 
           const buffer = Buffer.concat(chunks);
-          // --- FIX 1: HANDLE DECOMPRESSION ---
           let decodedBuffer = buffer;
           const encoding = (res.headers['content-encoding'] || '').toLowerCase();
 
@@ -222,15 +239,12 @@ export const executeHttpRequest = (requestConfig, cookieJar = null) => {
 
           let data = decodedBuffer.toString('utf8');
 
-          // Parse JSON if possible
           if ((res.headers['content-type'] || '').includes('application/json')) {
              try { data = JSON.parse(data); } catch { }
           }
 
-          // --- FIX 2: PARSE COOKIES FOR UI ---
           const parsedCookies = parseResponseCookies(res.headers);
 
-          // Capture Set-Cookie
           if (cookieJar && res.headers['set-cookie']) {
               const rawCookies = Array.isArray(res.headers['set-cookie']) 
                   ? res.headers['set-cookie'] 
@@ -262,12 +276,20 @@ export const executeHttpRequest = (requestConfig, cookieJar = null) => {
           resolve(createErrorResponse("Request Timed Out", Date.now() - timings.start));
       });
 
-      // WRITE BODY
-      if (requestPayload) {
+      // --- THE FINAL CRUCIAL FIX ---
+      // If it's FormData, pipe it so the boundary chunks stream correctly.
+      if (requestPayload instanceof FormData) {
+          requestPayload.pipe(req);
+      } 
+      // If it's raw string or binary buffer, write it.
+      else if (requestPayload) {
           req.write(requestPayload);
+          req.end();
+      } 
+      // If no body
+      else {
+          req.end();
       }
-      
-      req.end();
 
     } catch (globalError) {
       resolve(createErrorResponse(globalError.message, 0));

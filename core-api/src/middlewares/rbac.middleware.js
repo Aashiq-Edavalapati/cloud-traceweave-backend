@@ -9,7 +9,7 @@ import { checkWorkspacePermission } from '../utils/rbac.utils.js';
  * @param {string} requiredRole - 'OWNER', 'EDITOR', 'VIEWER'
  */
 export const requireWorkspaceRole = (requiredRole) => async (req, res, next) => {
-    console.log("Entered requireWorkspaceRole middleware with role:", requiredRole);
+    // console.log("Entered requireWorkspaceRole middleware with role:", requiredRole);
     try {
         const userId = req.user.id;
         let workspaceId = req?.params?.workspaceId || req.body?.workspaceId;
