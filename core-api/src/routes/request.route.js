@@ -18,6 +18,8 @@ router.use(authenticateUser);
 router.post('/execute', requireWorkspaceRole('EDITOR'), upload.any(), requestController.executeAdHocRequest);
 
 router.get('/jar/cookies', cookieController.getCookies);
+router.post('/jar/cookies', cookieController.createCookie);
+router.put('/jar/cookies/:cookieId', cookieController.updateCookie);
 router.delete('/jar/cookies/:cookieId', cookieController.deleteCookie);
 router.delete('/jar/cookies', cookieController.clearCookies);
 
