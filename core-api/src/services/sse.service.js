@@ -5,9 +5,9 @@ export const sseService = {
         // --- BULLETPROOF SSE HEADERS ---
         res.writeHead(200, {
             'Content-Type': 'text/event-stream',
-            'Cache-Control': 'no-cache, no-transform', // no-transform bypasses compression middleware
+            'Cache-Control': 'no-cache, no-transform',
             'Connection': 'keep-alive',
-            'X-Accel-Buffering': 'no', // Bypasses Nginx buffering if you use it
+            'X-Accel-Buffering': 'no',
             'Access-Control-Allow-Origin': '*' 
         });
         
