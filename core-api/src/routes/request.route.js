@@ -16,6 +16,7 @@ router.use(authenticateUser);
 
 // Static / specific routes
 router.post('/execute', requireWorkspaceRole('EDITOR'), upload.any(), requestController.executeAdHocRequest);
+router.post('/history/sync', requireWorkspaceRole('VIEWER'), requestController.syncExecutionHistory);
 
 router.get('/jar/cookies', cookieController.getCookies);
 router.post('/jar/cookies', cookieController.createCookie);
