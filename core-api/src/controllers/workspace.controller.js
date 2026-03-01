@@ -205,3 +205,37 @@ export const getWorkspaceHistory = async (req, res) => {
     res.status(500).json({ error: 'Failed to fetch workspace history' });
   }
 };
+
+/**
+ * Get Execution History for all Workspaces (Global)
+ * Pagination: ?page=1&limit=20
+ */
+export const getGlobalHistory = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 20;
+    const skip = (page - 1) * limit;
+
+    const logs = await ExecutionLog.find({ executedBy: userId })
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit)
+      .lean();
+
+    const total = await ExecutionLog.countDocuments({ executedBy: userId });
+
+    res.status(200).json({
+      data: logs,
+      pagination: {
+        total,
+        page,
+        limit,
+        pages: Math.ceil(total / limit),
+      },
+    });
+  } catch (error) {
+    console.error('Error fetching global history:', error);
+    res.status(500).json({ error: 'Failed to fetch global history' });
+  }
+};

@@ -9,7 +9,8 @@ import {
   addMemberToWorkspace,
   removeMemberFromWorkspace,
   updateMemberRole,
-  getWorkspaceHistory
+  getWorkspaceHistory,
+  getGlobalHistory
 } from '../controllers/workspace.controller.js';
 
 import {
@@ -24,37 +25,18 @@ const router = express.Router();
 router.use(authMiddleware);
 
 router.post('/create', createWorkspace);
-
 router.get('/', getMyWorkspaces);
 
+router.get('/user/global-history', getGlobalHistory); 
+
 router.get('/:workspaceId', requireWorkspaceRole('VIEWER'), getWorkspaceById);
-
 router.delete('/:workspaceId', requireWorkspaceRole('OWNER'), deleteWorkspace);
-
 router.patch('/:workspaceId', requireWorkspaceRole('EDITOR'), updateWorkspace);
-
 router.post('/:workspaceId/members', requireWorkspaceRole('OWNER'), addMemberToWorkspace);
-
-router.delete(
-  '/:workspaceId/members/:userId',
-  requireWorkspaceRole('OWNER'),
-  removeMemberFromWorkspace
-);
-
-router.patch(
-  '/:workspaceId/members/:userId',
-  requireWorkspaceRole('OWNER'),
-  updateMemberRole
-);
-
-router.get(
-  '/:workspaceId/history',
-  requireWorkspaceRole('VIEWER'),
-  getWorkspaceHistory
-);
-
+router.delete('/:workspaceId/members/:userId', requireWorkspaceRole('OWNER'), removeMemberFromWorkspace);
+router.patch('/:workspaceId/members/:userId', requireWorkspaceRole('OWNER'), updateMemberRole);
+router.get('/:workspaceId/history', requireWorkspaceRole('VIEWER'), getWorkspaceHistory);
 router.post('/:workspaceId/environments', requireWorkspaceRole('EDITOR'), createEnvironment);
 router.get('/:workspaceId/environments', requireWorkspaceRole('VIEWER'), getWorkspaceEnvironments);
-
 
 export default router;
