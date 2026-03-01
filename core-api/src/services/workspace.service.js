@@ -59,6 +59,7 @@ export const workspaceService = {
           some: { userId },
         },
       },
+      orderBy: { updatedAt: 'desc' },
       include: {
         members: {
           include: {
@@ -72,6 +73,13 @@ export const workspaceService = {
             },
           },
         },
+        // Get real metrics for the UI
+        _count: {
+          select: {
+            collections: { where: { deletedAt: null } },
+            environments: { where: { deletedAt: null } }
+          }
+        }
       },
     });
   },

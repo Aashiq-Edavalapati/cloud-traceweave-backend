@@ -10,7 +10,8 @@ import {
   removeMemberFromWorkspace,
   updateMemberRole,
   getWorkspaceHistory,
-  getGlobalHistory
+  getGlobalHistory,
+  getGlobalStats
 } from '../controllers/workspace.controller.js';
 
 import {
@@ -28,6 +29,7 @@ router.post('/create', createWorkspace);
 router.get('/', getMyWorkspaces);
 
 router.get('/user/global-history', getGlobalHistory); 
+router.get('/user/global-stats', getGlobalStats);
 
 router.get('/:workspaceId', requireWorkspaceRole('VIEWER'), getWorkspaceById);
 router.delete('/:workspaceId', requireWorkspaceRole('OWNER'), deleteWorkspace);

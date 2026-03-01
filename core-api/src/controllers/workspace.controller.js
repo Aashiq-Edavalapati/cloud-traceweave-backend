@@ -239,3 +239,77 @@ export const getGlobalHistory = async (req, res) => {
     res.status(500).json({ error: 'Failed to fetch global history' });
   }
 };
+
+export const getGlobalStats = async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    // Define timeframes (Last 7 days vs Previous 7 days)
+    const now = new Date();
+    const last7Days = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    const last14Days = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000);
+
+    const stats = await ExecutionLog.aggregate([
+      // 1. Filter for user's logs in the last 14 days to reduce working set
+      { $match: { executedBy: userId, createdAt: { $gte: last14Days } } },
+      
+      // 2. Facet allows us to run multiple parallel pipelines (Current vs Previous)
+      {
+        $facet: {
+          current: [
+            { $match: { createdAt: { $gte: last7Days } } },
+            { $group: {
+                _id: null,
+                total: { $sum: 1 },
+                errors: { $sum: { $cond: [{ $gte: ['$status', 400] }, 1, 0] } },
+                totalLatency: { $sum: '$timings.total' }
+            }}
+          ],
+          previous: [
+            { $match: { createdAt: { $lt: last7Days } } },
+            { $group: {
+                _id: null,
+                total: { $sum: 1 },
+                errors: { $sum: { $cond: [{ $gte: ['$status', 400] }, 1, 0] } },
+                totalLatency: { $sum: '$timings.total' }
+            }}
+          ]
+        }
+      }
+    ]);
+
+    // 3. Extract results (Aggregation returns arrays)
+    const current = stats[0].current[0] || { total: 0, errors: 0, totalLatency: 0 };
+    const previous = stats[0].previous[0] || { total: 0, errors: 0, totalLatency: 0 };
+
+    // 4. Mathematical Formatter Helpers
+    const calcErrorRate = (errs, total) => total > 0 ? (errs / total) * 100 : 0;
+    const calcAvgLatency = (lat, total) => total > 0 ? Math.round(lat / total) : 0;
+    const calcTrend = (curr, prev) => {
+        if (prev === 0) return curr > 0 ? 100 : 0;
+        return ((curr - prev) / prev) * 100;
+    };
+
+    // 5. Structure the final data for the frontend
+    const responseData = {
+      requests: {
+        value: current.total,
+        trend: calcTrend(current.total, previous.total)
+      },
+      latency: {
+        value: calcAvgLatency(current.totalLatency, current.total),
+        trend: calcTrend(calcAvgLatency(current.totalLatency, current.total), calcAvgLatency(previous.totalLatency, previous.total))
+      },
+      errorRate: {
+        value: calcErrorRate(current.errors, current.total),
+        // For error rates, we usually show absolute percentage point difference, not relative trend
+        trend: calcErrorRate(current.errors, current.total) - calcErrorRate(previous.errors, previous.total)
+      }
+    };
+
+    res.status(200).json({ data: responseData });
+  } catch (error) {
+    console.error('Error fetching global stats:', error);
+    res.status(500).json({ error: 'Failed to fetch analytics' });
+  }
+};
