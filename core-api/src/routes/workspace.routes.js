@@ -16,6 +16,7 @@ import {
 
 import {
   createEnvironment,
+  getGlobalEnvironments,
   getWorkspaceEnvironments
 } from '../controllers/environment.controller.js';
 
@@ -30,6 +31,7 @@ router.get('/', getMyWorkspaces);
 
 router.get('/user/global-history', getGlobalHistory); 
 router.get('/user/global-stats', getGlobalStats);
+router.get('/user/global-environments', getGlobalEnvironments);
 
 router.get('/:workspaceId', requireWorkspaceRole('VIEWER'), getWorkspaceById);
 router.delete('/:workspaceId', requireWorkspaceRole('OWNER'), deleteWorkspace);
