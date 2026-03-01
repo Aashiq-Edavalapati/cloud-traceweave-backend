@@ -151,4 +151,61 @@ export class CollectionService {
       data: updateBody
     });
   }
+
+  static async duplicateCollection(collectionId) {
+    // 1. Fetch the collection to duplicate to verify it exists
+    const original = await prisma.collection.findUnique({
+      where: { id: collectionId, deletedAt: null },
+    });
+
+    if (!original) {
+      throw new ApiError(httpStatus.NOT_FOUND, 'Collection not found');
+    }
+
+    // 2. Recursive function to build the Prisma create payload
+    const buildCreatePayload = async (colId, isRoot = false) => {
+      const col = await prisma.collection.findUnique({
+        where: { id: colId },
+        include: {
+          requests: { where: { deletedAt: null } },
+          children: { where: { deletedAt: null } }
+        }
+      });
+
+      // Recursively build the payloads for any sub-collections
+      const childrenPayloads = await Promise.all(
+        col.children.map(c => buildCreatePayload(c.id, false))
+      );
+
+      return {
+        name: isRoot ? `${col.name} Copy` : col.name,
+        workspaceId: col.workspaceId,
+        order: isRoot ? col.order + 1 : col.order,
+        requests: {
+          create: col.requests.map(r => ({
+            name: r.name,
+            protocol: r.protocol,
+            config: r.config || {},
+            order: r.order
+          }))
+        },
+        // Only include 'children' if there are actually children to create
+        ...(childrenPayloads.length > 0 && {
+          children: {
+            create: childrenPayloads
+          }
+        })
+      };
+    };
+
+    const createPayload = await buildCreatePayload(collectionId, true);
+    createPayload.parentId = original.parentId; // Keep it in the same parent folder
+
+    // 3. Create the entire tree in one transaction
+    const newCollection = await prisma.collection.create({
+      data: createPayload
+    });
+
+    return newCollection;
+  }
 }

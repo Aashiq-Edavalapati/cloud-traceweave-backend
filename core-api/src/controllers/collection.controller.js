@@ -62,3 +62,9 @@ export const updateCollection = catchAsync(async (req, res) => {
   res.status(httpStatus.OK).send(collection);
 });
 
+export const duplicateCollection = catchAsync(async (req, res) => {
+  const { collectionId } = req.params;
+  const result = await CollectionService.duplicateCollection(collectionId);
+  res.status(httpStatus.CREATED).send(result);
+});
+
