@@ -210,7 +210,6 @@ export const requestController = {
      HISTORY
     ============================ */
     getRequestHistory: catchAsync(async (req, res) => {
-      // ... keep existing
       const { requestId } = req.params;
       const { environmentId } = req.body;
 

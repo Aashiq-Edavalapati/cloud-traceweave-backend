@@ -4,7 +4,8 @@ import {
   createCollection,
   getCollectionsByWorkspace,
   deleteCollection,
-  updateCollection
+  updateCollection,
+  duplicateCollection
 } from '../controllers/collection.controller.js';
 
 import { requireWorkspaceRole } from '../middlewares/rbac.middleware.js';
@@ -25,5 +26,7 @@ router.get('/workspace/:workspaceId', requireWorkspaceRole('VIEWER'), getCollect
 router.delete('/:collectionId', requireWorkspaceRole('OWNER'), deleteCollection);
 
 router.patch('/:collectionId', requireWorkspaceRole('EDITOR'), updateCollection);
+
+router.post('/:collectionId/duplicate', requireWorkspaceRole('EDITOR'), duplicateCollection);
 
 export default router;

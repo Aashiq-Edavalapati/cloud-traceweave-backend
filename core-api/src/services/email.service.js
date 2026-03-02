@@ -12,13 +12,15 @@ const transporter = nodemailer.createTransport({
 });
 
 // Verify Connection on Startup
-transporter.verify((error, success) => {
-  if (error) {
-    console.error('❌ Email Service Error:', error.message);
-  } else {
-    console.log('✅ Email Service is ready to send messages');
-  }
-});
+if (process.env.NODE_ENV !== 'test') {
+    transporter.verify((error, success) => {
+        if (error) {
+            console.error('❌ Email Service Error:', error.message);
+        } else {
+            console.log('✅ Email Service is ready to send messages');
+        }
+    });
+}
 
 /**
  * Send an email

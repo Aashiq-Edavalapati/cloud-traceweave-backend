@@ -6,6 +6,7 @@ import workspaceRoute from './workspace.routes.js';
 import requestRoute from './request.route.js';
 import workflowRoute from './workflow.routes.js';
 import environmentRoute from './environment.routes.js';
+import executionRoute from './execution.route.js';
 const router = express.Router();
 
 const defaultRoutes = [
@@ -36,8 +37,11 @@ const defaultRoutes = [
   {
     path: '/environments',
     route: environmentRoute,
-  }
-
+  },
+  {
+    path: '/executions',
+    route: executionRoute,
+  },
 ];
 
 defaultRoutes.forEach((route) => {
