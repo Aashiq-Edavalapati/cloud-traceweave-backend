@@ -106,7 +106,7 @@ export const addMemberToWorkspace = async (req, res, next) => {
       return res.status(400).json({ message: 'Invalid role. Must be OWNER, EDITOR, or VIEWER' });
     }
 
-    const member = await workspaceService.addMember(
+    const member = await workspaceService.addMemberDirectly(
       workspaceId,
       userId,
       email,

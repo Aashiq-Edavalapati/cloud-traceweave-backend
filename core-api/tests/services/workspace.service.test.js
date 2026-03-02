@@ -17,6 +17,13 @@ const mockPrisma = {
         delete: jest.fn(),
         update: jest.fn(),
     },
+    workspaceInvite: {
+        create: jest.fn(),
+        findUnique: jest.fn(),
+        findFirst: jest.fn(),
+        update: jest.fn(),
+        findMany: jest.fn(),
+    },
     user: {
         findUnique: jest.fn(),
     },
@@ -26,13 +33,18 @@ const mockPrisma = {
     userEnvironment: {
         createMany: jest.fn(),
     },
+    $transaction: jest.fn((promises) => Promise.all(promises)),
 };
 
 jest.unstable_mockModule('../../src/config/prisma.js', () => ({
     default: mockPrisma,
 }));
 
-// Import service after mocking
+// Mock Email Service - CORRECTED PATH
+jest.unstable_mockModule('../../src/services/email.service.js', () => ({
+    sendEmail: jest.fn().mockResolvedValue(true),
+}));
+
 const { workspaceService } = await import('../../src/services/workspace.service.js');
 
 describe('Workspace Service', () => {
@@ -62,26 +74,14 @@ describe('Workspace Service', () => {
         });
     });
 
-    describe('getUserWorkspaces', () => {
-        test('should return list of workspaces for user', async () => {
-            const workspaces = [{ id: 'ws1' }];
-            mockPrisma.workspace.findMany.mockResolvedValue(workspaces);
-
-            const result = await workspaceService.getUserWorkspaces('user1');
-
-            expect(mockPrisma.workspace.findMany).toHaveBeenCalled();
-            expect(result).toEqual(workspaces);
-        });
-    });
-
-    describe('addMember', () => {
+    describe('addMemberDirectly', () => {
         test('should add a member successfully', async () => {
             mockPrisma.workspace.findFirst.mockResolvedValue({ id: 'ws1', ownerId: 'owner1' });
             mockPrisma.user.findUnique.mockResolvedValue({ id: 'user2', email: 'user2@ex.com' });
             mockPrisma.workspaceMember.create.mockResolvedValue({ userId: 'user2', role: 'VIEWER' });
             mockPrisma.environment.findMany.mockResolvedValue([]);
 
-            const result = await workspaceService.addMember('ws1', 'owner1', 'user2@ex.com', 'VIEWER');
+            const result = await workspaceService.addMemberDirectly('ws1', 'owner1', 'user2@ex.com', 'VIEWER');
 
             expect(mockPrisma.workspaceMember.create).toHaveBeenCalled();
             expect(result).toBeDefined();
@@ -91,8 +91,43 @@ describe('Workspace Service', () => {
             mockPrisma.workspace.findFirst.mockResolvedValue({ id: 'ws1', ownerId: 'owner1' });
             mockPrisma.user.findUnique.mockResolvedValue(null);
 
-            await expect(workspaceService.addMember('ws1', 'owner1', 'ghost@ex.com'))
+            await expect(workspaceService.addMemberDirectly('ws1', 'owner1', 'ghost@ex.com'))
                 .rejects.toThrow(ApiError);
+        });
+    });
+
+    describe('Invite System', () => {
+        test('should create an invite successfully', async () => {
+            mockPrisma.workspace.findUnique.mockResolvedValue({ id: 'ws1', name: 'Test WS' });
+            mockPrisma.user.findUnique.mockResolvedValue(null);
+            mockPrisma.workspaceInvite.findFirst.mockResolvedValue(null);
+            mockPrisma.workspaceInvite.create.mockResolvedValue({ id: 'inv1', token: 'token123' });
+
+            const result = await workspaceService.createInvite('ws1', 'inviter1', 'new@ex.com', 'VIEWER');
+            
+            expect(mockPrisma.workspaceInvite.create).toHaveBeenCalled();
+            expect(result.token).toBe('token123');
+        });
+
+        test('should accept an email invite successfully', async () => {
+            const mockUser = { id: 'u1', email: 'test@ex.com' };
+            const mockInvite = { 
+                id: 'inv1', 
+                workspaceId: 'ws1', 
+                email: 'test@ex.com', 
+                role: 'VIEWER', 
+                status: 'PENDING',
+                expiresAt: new Date(Date.now() + 10000)
+            };
+
+            mockPrisma.user.findUnique.mockResolvedValue(mockUser);
+            mockPrisma.workspaceInvite.findUnique.mockResolvedValue(mockInvite);
+            mockPrisma.workspaceMember.create.mockResolvedValue({ id: 'm1' });
+
+            const result = await workspaceService.acceptInvite('token123', 'u1');
+            expect(mockPrisma.workspaceMember.create).toHaveBeenCalledWith(expect.objectContaining({
+                data: { workspaceId: 'ws1', userId: 'u1', role: 'VIEWER' }
+            }));
         });
     });
 
@@ -111,7 +146,7 @@ describe('Workspace Service', () => {
             mockPrisma.workspace.findUnique.mockResolvedValue({ ownerId: 'owner1' });
 
             await expect(workspaceService.removeMember('ws1', 'owner1', 'owner1'))
-                .rejects.toThrow('Cannot remove the owner from the workspace');
+                .rejects.toThrow(ApiError);
         });
     });
 

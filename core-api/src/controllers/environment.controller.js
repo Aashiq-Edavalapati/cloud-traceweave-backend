@@ -1,4 +1,5 @@
 import httpStatus from 'http-status';
+import prisma from '../config/prisma.js';
 import catchAsync from '../utils/catchAsync.js';
 import { environmentService } from '../services/environment.service.js';
 
@@ -63,25 +64,22 @@ export const deleteVariable = catchAsync(async (req, res) => {
 });
 
 export const getGlobalEnvironments = catchAsync(async (req, res) => {
-  const userId = req.user.id;
+    const userId = req.user.id;
 
-  const environments = await prisma.environment.findMany({
-    where: {
-      deletedAt: null,
-      // Only get environments from workspaces where the user is a member
-      workspace: {
-        members: { some: { userId } },
-        deletedAt: null
-      }
-    },
-    include: {
-      // Pull in the workspace name so we can show it in the UI
-      workspace: { select: { id: true, name: true } },
-      // Count the variables so we don't have to fetch them all
-      _count: { select: { variables: { where: { deletedAt: null } } } }
-    },
-    orderBy: { updatedAt: 'desc' }
-  });
+    const environments = await prisma.environment.findMany({
+        where: {
+            deletedAt: null,
+            workspace: {
+                members: { some: { userId } },
+                deletedAt: null
+            }
+        },
+        include: {
+            workspace: { select: { id: true, name: true } },
+            _count: { select: { variables: { where: { deletedAt: null } } } }
+        },
+        orderBy: { updatedAt: 'desc' }
+    });
 
-  res.status(200).json({ data: environments });
+    res.status(200).json({ data: environments });
 });

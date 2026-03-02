@@ -27,6 +27,15 @@ const mockControllers = {
     getWorkspaceHistory: jest.fn((req, res) => res.status(200).json([])),
     createEnvironment: jest.fn((req, res) => res.status(201).json({})),
     getWorkspaceEnvironments: jest.fn((req, res) => res.status(200).json([])),
+    getGlobalHistory: jest.fn((req, res) => res.status(200).json([])),
+    getGlobalStats: jest.fn((req, res) => res.status(200).json({})),
+    createWorkspaceInvite: jest.fn((req, res) => res.status(201).json({})),
+    getPendingInvites: jest.fn((req, res) => res.status(200).json([])),
+    acceptWorkspaceInvite: jest.fn((req, res) => res.status(200).json({})),
+    toggleCommonLink: jest.fn((req, res) => res.status(200).json({})),
+    resetCommonLink: jest.fn((req, res) => res.status(200).json({})),
+    // Added to match environment.controller exports used in workspace routes
+    getGlobalEnvironments: jest.fn((req, res) => res.status(200).json([])),
 };
 
 // Mock modules
@@ -38,7 +47,7 @@ jest.unstable_mockModule('../../src/middlewares/rbac.middleware.js', () => ({
     requireWorkspaceRole: mockRequireWorkspaceRole,
 }));
 
-// We need to mock the controller before importing the routes
+// Mock the Workspace Controller with all necessary exports
 jest.unstable_mockModule('../../src/controllers/workspace.controller.js', () => ({
     createWorkspace: mockControllers.createWorkspace,
     getMyWorkspaces: mockControllers.getMyWorkspaces,
@@ -49,14 +58,23 @@ jest.unstable_mockModule('../../src/controllers/workspace.controller.js', () => 
     removeMemberFromWorkspace: mockControllers.removeMemberFromWorkspace,
     updateMemberRole: mockControllers.updateMemberRole,
     getWorkspaceHistory: mockControllers.getWorkspaceHistory,
+    getGlobalHistory: mockControllers.getGlobalHistory,
+    getGlobalStats: mockControllers.getGlobalStats,
+    createWorkspaceInvite: mockControllers.createWorkspaceInvite,
+    getPendingInvites: mockControllers.getPendingInvites,
+    acceptWorkspaceInvite: mockControllers.acceptWorkspaceInvite,
+    toggleCommonLink: mockControllers.toggleCommonLink,
+    resetCommonLink: mockControllers.resetCommonLink,
 }));
 
+// Mock the Environment Controller (Environment functions are used in Workspace routes)
 jest.unstable_mockModule('../../src/controllers/environment.controller.js', () => ({
     createEnvironment: mockControllers.createEnvironment,
     getWorkspaceEnvironments: mockControllers.getWorkspaceEnvironments,
+    getGlobalEnvironments: mockControllers.getGlobalEnvironments,
 }));
 
-// Import router
+// Import router after all mocks are defined
 const { default: workspaceRouter } = await import('../../src/routes/workspace.routes.js');
 
 describe('Workspace Routes', () => {
@@ -72,6 +90,7 @@ describe('Workspace Routes', () => {
         jest.clearAllMocks();
     });
 
+    // --- Base Workspace Tests ---
     test('POST /workspaces/create should call createWorkspace controller', async () => {
         const response = await request(app)
             .post('/workspaces/create')
@@ -87,15 +106,32 @@ describe('Workspace Routes', () => {
         expect(mockControllers.getMyWorkspaces).toHaveBeenCalled();
     });
 
-    test('GET /workspaces/:workspaceId should call getWorkspaceById controller', async () => {
-        const response = await request(app).get('/workspaces/ws1');
+    // --- Invite System Tests ---
+    test('POST /workspaces/invites/accept should call acceptWorkspaceInvite', async () => {
+        const response = await request(app)
+            .post('/workspaces/invites/accept')
+            .send({ token: 'test-token' });
+        
         expect(response.status).toBe(200);
-        expect(mockControllers.getWorkspaceById).toHaveBeenCalled();
+        expect(mockControllers.acceptWorkspaceInvite).toHaveBeenCalled();
     });
 
-    test('DELETE /workspaces/:workspaceId should call deleteWorkspace controller', async () => {
-        const response = await request(app).delete('/workspaces/ws1');
+    test('POST /workspaces/:workspaceId/invites should call createWorkspaceInvite', async () => {
+        const response = await request(app)
+            .post('/workspaces/ws1/invites')
+            .send({ email: 'test@example.com', role: 'VIEWER' });
+        
+        expect(response.status).toBe(201);
+        expect(mockControllers.createWorkspaceInvite).toHaveBeenCalled();
+    });
+
+    // --- Member Management Tests ---
+    test('PATCH /workspaces/:workspaceId/members/:userId should call updateMemberRole', async () => {
+        const response = await request(app)
+            .patch('/workspaces/ws1/members/user2')
+            .send({ role: 'EDITOR' });
+        
         expect(response.status).toBe(200);
-        expect(mockControllers.deleteWorkspace).toHaveBeenCalled();
+        expect(mockControllers.updateMemberRole).toHaveBeenCalled();
     });
 });

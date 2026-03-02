@@ -8,7 +8,7 @@ const mockWorkspaceService = {
     getWorkspaceById: jest.fn(),
     deleteWorkspace: jest.fn(),
     updateWorkspace: jest.fn(),
-    addMember: jest.fn(),
+    addMemberDirectly: jest.fn(),
     removeMember: jest.fn(),
     updateMemberRole: jest.fn(),
 };
@@ -106,7 +106,7 @@ describe('Workspace Controller', () => {
         test('should add member and return 201', async () => {
             req.params.workspaceId = 'ws1';
             req.body = { email: 'test@ex.com', role: 'EDITOR' };
-            mockWorkspaceService.addMember.mockResolvedValue({ userId: 'user2' });
+            mockWorkspaceService.addMemberDirectly.mockResolvedValue({ userId: 'user2' });
 
             await addMemberToWorkspace(req, res, next);
 

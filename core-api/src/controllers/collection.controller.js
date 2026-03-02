@@ -8,55 +8,38 @@ const catchAsync = (fn) => (req, res, next) =>
 
 export const createCollection = catchAsync(async (req, res) => {
   const { name, parentId } = req.body;
-  console.log(req.body)
   const { workspaceId } = req.params;
-  const userId = req.user.id;
-
+  // Removed userId from here because the Service doesn't take it
   const collection = await CollectionService.createCollection({
     workspaceId,
     name,
     parentId,
-    userId,
   });
 
   res.status(httpStatus.CREATED).send(collection);
 });
 
 export const getCollectionsByWorkspace = catchAsync(async (req, res) => {
-  try {
-    console.log('Getting collections for workspace:', req.params.workspaceId);
-    const { workspaceId } = req.params;
-    const userId = req.user.id;
-  
-    console.log('User ID:', userId);
-    const collections =
-      await CollectionService.getCollectionsByWorkspace(workspaceId, userId);
-    console.log('Collections retrieved:', collections.length);
-    res.status(httpStatus.OK).send(collections);
-  } catch (error) {
-    console.error('Error fetching collections:', error);
-  }
+  const { workspaceId } = req.params;
+  // Removed userId parameter to match the Service signature
+  const collections = await CollectionService.getCollectionsByWorkspace(workspaceId);
+  res.status(httpStatus.OK).send(collections);
 });
 
 export const deleteCollection = catchAsync(async (req, res) => {
   const { collectionId } = req.params;
-  const userId = req.user.id;
-
-  const result =
-    await CollectionService.softDeleteCollection(collectionId, userId);
-
+  // Removed userId
+  const result = await CollectionService.softDeleteCollection(collectionId);
   res.status(httpStatus.OK).send(result);
 });
 
 export const updateCollection = catchAsync(async (req, res) => {
   const { collectionId } = req.params;
   const { name } = req.body;
-  const userId = req.user.id;
-
+  // Removed userId
   const collection = await CollectionService.updateCollection(
-    collectionId,
-    { name },
-    userId
+    collectionId, 
+    { name }
   );
 
   res.status(httpStatus.OK).send(collection);
@@ -67,4 +50,3 @@ export const duplicateCollection = catchAsync(async (req, res) => {
   const result = await CollectionService.duplicateCollection(collectionId);
   res.status(httpStatus.CREATED).send(result);
 });
-
