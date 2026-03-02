@@ -224,4 +224,67 @@ export const requestController = {
 
       res.json(history);
     }),
+
+    /**
+   * Path C: Sync Local Desktop Execution (OP-363)
+   * This is a lightweight, fire-and-forget endpoint to log executions
+   * that happened locally inside the Electron app.
+   */
+  syncExecutionHistory: catchAsync(async (req, res) => {
+    try {
+      const { requestId, workspaceId, protocol, url, method, responseMeta } = req.body;
+      const userId = req.user.id;
+
+      if (!workspaceId) {
+        return res.status(400).json({ error: 'workspaceId is required for history sync' });
+      }
+
+      // If it's a saved request, fetch the collectionId from Postgres to maintain relationships
+      let collectionId = null;
+      if (requestId) {
+        const requestDef = await prisma.requestDefinition.findUnique({
+          where: { id: requestId },
+          select: { collectionId: true }
+        });
+        if (requestDef) {
+          collectionId = requestDef.collectionId;
+        }
+      }
+
+      // Create the MongoDB history document using your existing schema
+      const executionLog = await ExecutionLog.create({
+        requestId: requestId || null,
+        collectionId: collectionId,
+        workspaceId,
+        environmentId: null, // Optional: You could pass this from the frontend if needed
+        method: method || 'GET',
+        url: url,
+        
+        // We only save the metadata to save bandwidth and DB space.
+        // We do NOT save the requestBody or responseBody here because 
+        // passing heavy files/JSON over the wire just for logging defeats the purpose of local execution.
+        status: responseMeta.status,
+        statusText: responseMeta.statusText,
+        responseSize: responseMeta.size,
+        
+        timings: {
+          total: responseMeta.time,
+          // Since it's a local execution, we might not have the full waterfall 
+          // from Electron unless we built a custom HTTP agent. We default to the total.
+          dnsLookup: 0,
+          tcpConnection: 0,
+          tlsHandshake: 0,
+          firstByte: 0,
+          download: 0,
+        },
+        
+        executedBy: userId,
+      });
+
+      res.status(201).json({ success: true, historyId: executionLog._id });
+    } catch (error) {
+      console.error("History Sync Error:", error);
+      res.status(500).json({ error: error.message || 'Failed to sync execution history' });
+    }
+  }),
 };

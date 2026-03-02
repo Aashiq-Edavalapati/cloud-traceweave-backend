@@ -1,4 +1,3 @@
-// backend/core-api/src/services/cookie.service.js
 import { CookieJar, Cookie } from 'tough-cookie';
 import CookieJarModel from '../models/cookie-jar.model.js';
 

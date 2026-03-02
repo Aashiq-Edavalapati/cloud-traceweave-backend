@@ -3,7 +3,21 @@ import { executeHttpRequest } from './http-runner.service.js';
 export const executeGraphQLRequest = async (requestConfig, cookieJar) => {
     // console.log("Preparing to execute GraphQL request with config:", requestConfig);
     const { url, headers = {}, body } = requestConfig;
-    const { query, variables } = body.graphql || {};
+    // console.log("GraphQL Request body:", body);
+    const query = body?.graphql?.query || body?.query;
+    let variables = body?.graphql?.variables || body?.variables || {};
+    console.log("Extracted GraphQL query:", query);
+    console.log("Extracted GraphQL variables:", variables);
+    if (!query || !query.trim()) {
+        return {
+            success: false,
+            status: 400,
+            statusText: 'Bad Request',
+            data: { error: 'GraphQL query is missing' },
+            timings: { total: 0 }
+        };
+    }
+    console.log("Final GraphQL request config - URL:", url, "Headers:", headers, "Query:", query, "Variables:", variables);
 
     // 1. Prepare Payload
     // GraphQL always needs this specific JSON structure
