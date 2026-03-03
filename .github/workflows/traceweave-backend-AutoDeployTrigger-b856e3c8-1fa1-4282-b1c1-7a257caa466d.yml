@@ -1,28 +1,25 @@
 name: Trigger auto deployment for traceweave-backend
 
-# When this action will be executed
 on:
-  # Automatically trigger it when detected changes in repo
   push:
     branches: 
       [ main ]
     paths:
-    - '**'
-    - '.github/workflows/traceweave-backend-AutoDeployTrigger-b856e3c8-1fa1-4282-b1c1-7a257caa466d.yml'
+      - 'core-api/**' # Only trigger when code in core-api changes
+      - '.github/workflows/traceweave-backend-AutoDeployTrigger-*.yml'
 
-  # Allow manual trigger 
   workflow_dispatch:      
 
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
     permissions: 
-      id-token: write #This is required for requesting the OIDC JWT Token
-      contents: read #Required when GH token is used to authenticate with private repo
+      id-token: write
+      contents: read
 
     steps:
       - name: Checkout to the branch
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4 # Updated to v4 for better performance
 
       - name: Azure Login
         uses: azure/login@v2
@@ -34,16 +31,16 @@ jobs:
       - name: Build and push container image to registry
         uses: azure/container-apps-deploy-action@v2
         with:
-          appSourcePath: ${{ github.workspace }}
-          _dockerfilePathKey_: _dockerfilePath_
-          _targetLabelKey_: _targetLabel_
+          # FIX: Point to the subfolder where your code lives
+          appSourcePath: ${{ github.workspace }}/core-api 
+          
+          # FIX: Path to Dockerfile relative to appSourcePath
+          dockerfilePath: Dockerfile 
+          
           registryUrl: 
           registryUsername: ${{ secrets.TRACEWEAVEBACKEND_REGISTRY_USERNAME }}
           registryPassword: ${{ secrets.TRACEWEAVEBACKEND_REGISTRY_PASSWORD }}
           containerAppName: traceweave-backend
           resourceGroup: TraceWeave_RG
-          imageToBuild: default/[parameters('containerAppName')]:${{ github.sha }}
-          _buildArgumentsKey_: |
-            _buildArgumentsValues_
-
-
+          # Using the commit SHA ensures every deployment is unique
+          imageToBuild: traceweave-backend:${{ github.sha }}
