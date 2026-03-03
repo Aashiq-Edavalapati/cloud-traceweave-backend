@@ -1,25 +1,34 @@
 import mongoose from 'mongoose';
-
 import config from './config.js';
+import { getSecret } from './utils/keyVault.js';
 
 const connectMongo = async () => {
   if (mongoose.connection.readyState >= 1) {
     return;
   }
 
-  const mongoUri = process.env.MONGO_URI || process.env.MONGO_URL;
-
-  if (!mongoUri) {
-    console.error('❌ MONGO_URI or MONGO_URL is not defined in environment variables');
-    console.log('Available environment variables:', Object.keys(process.env).filter(k => k.includes('MONGO') || k.includes('URI') || k.includes('URL')));
-    process.exit(1);
-  }
+  let mongoUri;
 
   try {
+    // First try local env (for development)
+    if (process.env.MONGO_URI || process.env.MONGO_URL) {
+      mongoUri = process.env.MONGO_URI || process.env.MONGO_URL;
+      console.log("ℹ️ Using local environment Mongo URI");
+    } else {
+      // Otherwise fetch from Azure Key Vault
+      console.log("🔐 Fetching Mongo URI from Azure Key Vault...");
+      mongoUri = await getSecret("MONGO_URI");
+    }
+
+    if (!mongoUri) {
+      throw new Error("Mongo URI is empty");
+    }
+
     await mongoose.connect(mongoUri, {
       autoIndex: config.mongoose.autoIndex,
     });
-    console.log('✅ MongoDB Atlas Connected (Logs & History)');
+
+    console.log('✅ MongoDB Connected');
   } catch (error) {
     console.error('❌ MongoDB Connection Error:', error);
     process.exit(1);
