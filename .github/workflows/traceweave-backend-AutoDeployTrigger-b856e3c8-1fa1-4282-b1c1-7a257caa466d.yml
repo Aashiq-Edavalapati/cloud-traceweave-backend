@@ -2,13 +2,10 @@ name: Trigger auto deployment for traceweave-backend
 
 on:
   push:
-    branches: 
-      [ main ]
+    branches: [ main ]
     paths:
-      - 'core-api/**' # Only trigger when code in core-api changes
-      - '.github/workflows/traceweave-backend-AutoDeployTrigger-*.yml'
-
-  workflow_dispatch:      
+      - 'core-api/**'
+      - '.github/workflows/**'
 
 jobs:
   build-and-deploy:
@@ -19,7 +16,7 @@ jobs:
 
     steps:
       - name: Checkout to the branch
-        uses: actions/checkout@v4 # Updated to v4 for better performance
+        uses: actions/checkout@v4
 
       - name: Azure Login
         uses: azure/login@v2
@@ -31,16 +28,13 @@ jobs:
       - name: Build and push container image to registry
         uses: azure/container-apps-deploy-action@v2
         with:
-          # FIX: Point to the subfolder where your code lives
-          appSourcePath: ${{ github.workspace }}/core-api 
-          
-          # FIX: Path to Dockerfile relative to appSourcePath
-          dockerfilePath: Dockerfile 
-          
-          registryUrl: 
+          appSourcePath: ${{ github.workspace }}/core-api
+          dockerfilePath: Dockerfile
+          # Point to your NEW registry
+          registryUrl: ${{ secrets.TRACEWEAVEBACKEND_REGISTRY_URL }}
           registryUsername: ${{ secrets.TRACEWEAVEBACKEND_REGISTRY_USERNAME }}
           registryPassword: ${{ secrets.TRACEWEAVEBACKEND_REGISTRY_PASSWORD }}
           containerAppName: traceweave-backend
           resourceGroup: TraceWeave_RG
-          # Using the commit SHA ensures every deployment is unique
-          imageToBuild: traceweave-backend:${{ github.sha }}
+          # Use your registry URL in the image name
+          imageToBuild: ${{ secrets.TRACEWEAVEBACKEND_REGISTRY_URL }}/traceweave-backend:${{ github.sha }}
