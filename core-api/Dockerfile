@@ -24,5 +24,5 @@ RUN npx prisma generate
 # 8. Expose the API port
 EXPOSE 4000
 
-# 9. Start in Dev mode
-CMD ["npm", "run", "dev"]
+# 9. Start in Prod mode
+CMD ["npm", "run", "start"]
