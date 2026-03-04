@@ -26,6 +26,7 @@ import connectMongo from "./config/mongo.js";
 console.log("🔹 Imports completed");
 
 const app = express();
+app.set('trust proxy', 1);
 
 console.log("🔹 Express app created");
 

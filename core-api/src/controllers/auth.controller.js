@@ -16,7 +16,7 @@ export const register = catchAsync(async (req, res) => {
     httpOnly: true,
     secure: config.env === 'production',
     expires: tokens.access.expires,
-    sameSite: config.env === 'production' ? 'lax' : 'lax'
+    sameSite: config.env === 'production' ? 'none' : 'lax'
   });
 
   res.status(httpStatus.CREATED).send({ user: { id: user.id, email: user.email, full_name: user.fullName } });
@@ -31,7 +31,7 @@ export const login = catchAsync(async (req, res) => {
     httpOnly: true,
     secure: config.env === 'production', 
     expires: tokens.access.expires,
-    sameSite: config.env === 'production' ? 'lax' : 'lax'
+    sameSite: config.env === 'production' ? 'none' : 'lax'
   });
 
   res.send({ user: { id: user.id, email: user.email, full_name: user.fullName } });
