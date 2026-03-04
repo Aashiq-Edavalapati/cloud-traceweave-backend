@@ -1,7 +1,7 @@
 {
   "name": "core-api",
   "version": "1.0.0",
-  "description": "",
+  "description": "Express based backend for traceweave",
   "main": "index.js",
   "type": "module",
   "scripts": {
