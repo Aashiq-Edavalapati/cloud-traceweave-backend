@@ -15,4 +15,9 @@ export default {
   mongoose: {
     autoIndex: process.env.NODE_ENV !== 'production',
   },
+  serviceBus: {
+    enabled: process.env.SERVICE_BUS_ENABLED !== 'false',
+    connectionString: process.env.SERVICE_BUS_CONNECTION_STRING || '',
+    queueName: process.env.SERVICE_BUS_QUEUE_NAME || 'replay-requests',
+  },
 };

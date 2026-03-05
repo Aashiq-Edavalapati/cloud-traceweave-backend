@@ -8,6 +8,7 @@ import prisma from '../config/prisma.js';
 import { environmentService } from '../services/environment.service.js';
 import { substituteVariables } from '../services/variableSubstitution.service.js';
 import { loadCookieJar, persistCookieJar } from '../services/cookie.service.js';
+import { sendReplayRequestMessage } from '../services/serviceBus.service.js';
 
 export const requestController = {
 
@@ -124,6 +125,25 @@ export const requestController = {
           responseBody: result.data, responseSize: result.size, timings: result.timings, executedBy: userId,
         });
 
+        // Fire-and-forget publish so request execution response is not delayed by queue IO.
+        void sendReplayRequestMessage({
+          event: 'api_called',
+          historyId: executionLog._id.toString(),
+          workspaceId,
+          requestId: requestDef.id,
+          protocol: requestDef.protocol || 'http',
+          url: config.url,
+          method: config.method,
+          responseMeta: {
+            status: result.status,
+            statusText: result.statusText,
+            size: result.size,
+            time: result.timings?.total,
+          },
+          executedBy: userId,
+          timestamp: new Date().toISOString(),
+        });
+
         res.status(200).json({ ...result, time: result.timings.total, historyId: executionLog._id });
       } catch (error) {
         res.status(500).json({ error: error.message || 'Failed to execute request' });
@@ -198,6 +218,25 @@ export const requestController = {
         environmentId: environmentId || null, method: execConfig.method, url: execConfig.url,
         status: result.status, statusText: result.statusText, responseHeaders: result.headers,
         responseBody: result.data, responseSize: result.size, timings: result.timings, executedBy: userId,
+      });
+
+      // Fire-and-forget publish so request execution response is not delayed by queue IO.
+      void sendReplayRequestMessage({
+        event: 'api_called',
+        historyId: executionLog._id.toString(),
+        workspaceId,
+        requestId: null,
+        protocol,
+        url: execConfig.url,
+        method: execConfig.method,
+        responseMeta: {
+          status: result.status,
+          statusText: result.statusText,
+          size: result.size,
+          time: result.timings?.total,
+        },
+        executedBy: userId,
+        timestamp: new Date().toISOString(),
       });
 
       res.status(200).json({ ...result, time: result.timings.total, historyId: executionLog._id });
@@ -278,6 +317,20 @@ export const requestController = {
         },
         
         executedBy: userId,
+      });
+
+      // Fire-and-forget publish so history sync response is not delayed by queue IO.
+      void sendReplayRequestMessage({
+        event: 'api_called',
+        historyId: executionLog._id.toString(),
+        workspaceId,
+        requestId: requestId || null,
+        protocol: protocol || 'http',
+        url,
+        method: method || 'GET',
+        responseMeta: responseMeta || null,
+        executedBy: userId,
+        timestamp: new Date().toISOString(),
       });
 
       res.status(201).json({ success: true, historyId: executionLog._id });

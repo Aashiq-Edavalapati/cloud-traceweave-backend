@@ -22,6 +22,7 @@ import cookieParser from "cookie-parser";
 import passport from "./config/passport.js";
 import prisma from "./config/prisma.js";
 import connectMongo from "./config/mongo.js";
+import { initializeServiceBus, closeServiceBus } from "./services/serviceBus.service.js";
 
 console.log("🔹 Imports completed");
 
@@ -107,6 +108,9 @@ const startServer = async () => {
     await prisma.$connect();
     console.log("✅ PostgreSQL connected successfully");
 
+    console.log("🔹 Initializing Azure Service Bus publisher...");
+    await initializeServiceBus();
+
     console.log("🔹 Starting Express server...");
 
     server = app.listen(config.port, () => {
@@ -125,8 +129,10 @@ startServer();
 
 // ---------------- CRASH HANDLING ----------------
 
-const exitHandler = () => {
+const exitHandler = async () => {
   console.log("⚠️ Exit handler triggered");
+
+  await closeServiceBus();
 
   if (server) {
     console.log("🔹 Closing server...");
@@ -141,10 +147,10 @@ const exitHandler = () => {
 
 process.on("uncaughtException", (err) => {
   console.error("💥 Uncaught Exception:", err);
-  exitHandler();
+  void exitHandler();
 });
 
 process.on("unhandledRejection", (err) => {
   console.error("💥 Unhandled Rejection:", err);
-  exitHandler();
+  void exitHandler();
 });
