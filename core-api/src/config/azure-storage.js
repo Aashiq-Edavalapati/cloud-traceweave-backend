@@ -3,22 +3,35 @@ import multer from 'multer';
 import path from 'path';
 import { v4 as uuidv4 } from 'uuid';
 
-// Azure Storage Configuration
+// Azure Storage Configuration - supports both Connection String and SAS Token
 const AZURE_STORAGE_CONNECTION_STRING = process.env.AZURE_STORAGE_CONNECTION_STRING;
-const CONTAINER_NAME = 'uploads';
+const AZURE_STORAGE_ACCOUNT_NAME = process.env.AZURE_STORAGE_ACCOUNT_NAME;
+const AZURE_STORAGE_SAS_TOKEN = process.env.AZURE_STORAGE_SAS_TOKEN;
+const CONTAINER_NAME = process.env.AZURE_STORAGE_CONTAINER_NAME || 'uploads';
 
 // Initialize Azure Blob Service Client
 let blobServiceClient;
 let containerClient;
 
 if (AZURE_STORAGE_CONNECTION_STRING) {
+  // Use connection string (permanent access)
+  console.log('🔑 Using Azure Storage Connection String');
   blobServiceClient = BlobServiceClient.fromConnectionString(AZURE_STORAGE_CONNECTION_STRING);
   containerClient = blobServiceClient.getContainerClient(CONTAINER_NAME);
   
   // Create container if it doesn't exist
   containerClient.createIfNotExists({ access: 'blob' })
-    .then(() => console.log(`Azure Storage container "${CONTAINER_NAME}" is ready`))
-    .catch(err => console.error('Error creating container:', err));
+    .then(() => console.log(`✅ Azure Storage container "${CONTAINER_NAME}" is ready`))
+    .catch(err => console.error('⚠️  Error creating container:', err.message));
+} else if (AZURE_STORAGE_ACCOUNT_NAME && AZURE_STORAGE_SAS_TOKEN) {
+  // Use SAS token (temporary access)
+  console.log('🔑 Using Azure Storage SAS Token');
+  const accountUrl = `https://${AZURE_STORAGE_ACCOUNT_NAME}.blob.core.windows.net?${AZURE_STORAGE_SAS_TOKEN}`;
+  blobServiceClient = new BlobServiceClient(accountUrl);
+  containerClient = blobServiceClient.getContainerClient(CONTAINER_NAME);
+  console.log(`✅ Azure Storage container "${CONTAINER_NAME}" configured with SAS`);
+} else {
+  console.warn('⚠️  Azure Storage not configured. Set either AZURE_STORAGE_CONNECTION_STRING or AZURE_STORAGE_ACCOUNT_NAME + AZURE_STORAGE_SAS_TOKEN');
 }
 
 // Configure Multer to use memory storage

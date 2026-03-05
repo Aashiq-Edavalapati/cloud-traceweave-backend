@@ -1,5 +1,5 @@
 import express from 'express';
-import { upload } from '../config/cloudinary.js';
+import { upload } from '../config/azure-storage.js';
 import { uploadFile } from '../controllers/upload.controller.js';
 import authenticateUser from '../middlewares/auth.middleware.js'; 
 
