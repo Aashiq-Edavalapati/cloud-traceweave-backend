@@ -1,5 +1,3 @@
-# backend/core-api/Dockerfile
-
 # 1. Use Node 22 (Required by Prisma 7 & Mongoose 9)
 FROM node:22-alpine
 
